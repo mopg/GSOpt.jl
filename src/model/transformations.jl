@@ -11,7 +11,11 @@ The transformation preserves convexity, allowing the GP to be solved using
 standard convex optimization solvers.
 """
 
-function transform_variable!(log_model::JuMP.Model, var::GPVariable, var_map::Dict{GPVariable,JuMP.VariableRef})
+function transform_variable!(
+    log_model::JuMP.Model,
+    var::GPVariable,
+    var_map::Dict{GPVariable,JuMP.VariableRef},
+)
 
     if JuMP.is_fixed(var)
         # Fixed variables are transformed to log-transformed variables
@@ -85,10 +89,12 @@ function create_log_model(model::GPModel)
 end
 
 # Transform a monomial equality constraint to log space
-function transform_equality!(log_model::JuMP.Model,
+function transform_equality!(
+    log_model::JuMP.Model,
     func::MonomialExpression,
     set::MOI.EqualTo,
-    var_map::Dict{GPVariable,JuMP.VariableRef})
+    var_map::Dict{GPVariable,JuMP.VariableRef},
+)
     # In standard form, the constraint is: m/C = 1, or log(m) = log(C)
     # The monomial m = C * x1^a1 * x2^a2 * ... becomes 
     # log(m) = log(C) + a1*log(x1) + a2*log(x2) + ...
@@ -110,10 +116,12 @@ function transform_equality!(log_model::JuMP.Model,
 end
 
 # Transform a monomial inequality constraint to log space
-function transform_inequality!(log_model::JuMP.Model,
+function transform_inequality!(
+    log_model::JuMP.Model,
     func::MonomialExpression,
     set::MOI.LessThan,
-    var_map::Dict{GPVariable,JuMP.VariableRef})
+    var_map::Dict{GPVariable,JuMP.VariableRef},
+)
     # In standard form, the constraint is: m/C <= 1, or log(m) <= log(C)
     # The monomial m = C * x1^a1 * x2^a2 * ... becomes 
     # log(m) = log(C) + a1*log(x1) + a2*log(x2) + ...
@@ -131,10 +139,12 @@ function transform_inequality!(log_model::JuMP.Model,
 end
 
 # Transform a posynomial inequality constraint to log space
-function transform_inequality!(log_model::JuMP.Model,
+function transform_inequality!(
+    log_model::JuMP.Model,
     func::PosynomialExpression,
     set::MOI.LessThan,
-    var_map::Dict{GPVariable,JuMP.VariableRef})
+    var_map::Dict{GPVariable,JuMP.VariableRef},
+)
     # In standard form, the constraint is: p/C <= 1, or log(p) <= log(C)
     # For a posynomial p = sum_i (C_i * prod_j x_j^a_ij), we use the fact that:
     # log(sum_i exp(y_i)) is convex, where y_i = log(C_i * prod_j x_j^a_ij)
@@ -165,16 +175,21 @@ function transform_inequality!(log_model::JuMP.Model,
         # from e.g., https://www.seas.ucla.edu/~vandenbe/236C/lectures/conic.pdf (slide 15-12)
         u_aux_constraint = @variable(log_model, [1:length(log_terms)], lower_bound = 0.0)
         @constraint(log_model, sum(u_aux_constraint) <= 1)
-        for kk in 1:length(log_terms)
-            @constraint(log_model, [log_terms[kk], 1.0, u_aux_constraint[kk]] in MOI.ExponentialCone())
+        for kk = 1:length(log_terms)
+            @constraint(
+                log_model,
+                [log_terms[kk], 1.0, u_aux_constraint[kk]] in MOI.ExponentialCone()
+            )
         end
     end
 end
 
 # Transform the objective function
-function transform_objective!(log_model::JuMP.Model,
+function transform_objective!(
+    log_model::JuMP.Model,
     model::GPModel,
-    var_map::Dict{GPVariable,JuMP.VariableRef})
+    var_map::Dict{GPVariable,JuMP.VariableRef},
+)
     obj_func = model.objective_function
     sense = model.objective_sense
 
@@ -222,8 +237,11 @@ function transform_objective!(log_model::JuMP.Model,
 
             u_aux_obj = @variable(log_model, [1:length(log_terms)], lower_bound = 0.0)
             @constraint(log_model, sum(u_aux_obj) <= 1)
-            for kk in 1:length(log_terms)
-                @constraint(log_model, [log_terms[kk], 1.0, u_aux_obj[kk]] in MOI.ExponentialCone())
+            for kk = 1:length(log_terms)
+                @constraint(
+                    log_model,
+                    [log_terms[kk], 1.0, u_aux_obj[kk]] in MOI.ExponentialCone()
+                )
             end
 
             obj_variable_in_logspace = var_map[objective_variable]
@@ -247,10 +265,16 @@ function transform_objective!(log_model::JuMP.Model,
 end
 
 # Map the solution back from log space to original space
-function map_solution(model::GPModel, log_model::JuMP.Model, var_map::Dict{GPVariable,JuMP.VariableRef})
+function map_solution(
+    model::GPModel,
+    log_model::JuMP.Model,
+    var_map::Dict{GPVariable,JuMP.VariableRef},
+)
     # Check if the model was solved successfully
     term_status = JuMP.termination_status(log_model)
-    if term_status != MOI.OPTIMAL && term_status != MOI.LOCALLY_SOLVED && term_status != MOI.ALMOST_OPTIMAL
+    if term_status != MOI.OPTIMAL &&
+       term_status != MOI.LOCALLY_SOLVED &&
+       term_status != MOI.ALMOST_OPTIMAL
         @warn "Log-transformed model was not solved to optimality: $term_status"
     end
 

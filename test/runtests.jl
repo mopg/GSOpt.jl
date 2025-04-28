@@ -25,7 +25,7 @@ using Test
     @testset "Optimization Tests" begin
         include("test_optimize.jl")
     end
-    
+
     # Include display tests
     @testset "Display Tests" begin
         include("test_display.jl")

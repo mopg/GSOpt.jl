@@ -35,7 +35,8 @@ include("model/transformations.jl")
 
 # Export main types and functions
 export GPModel, GPVariable, GPConstraintRef
-export AbstractGPExpression, MonomialTerm, MonomialExpression, PosynomialExpression, SignomialExpression
+export AbstractGPExpression,
+    MonomialTerm, MonomialExpression, PosynomialExpression, SignomialExpression
 export is_monomial, is_posynomial
 
 end # module

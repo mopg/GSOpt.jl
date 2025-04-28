@@ -30,7 +30,7 @@ using Test
 
     # Test array of variables
     @variable(model, a[1:3] ≥ 0.1)
-    for i in 1:3
+    for i = 1:3
         @test a[i] isa GSOpt.GPVariable
         @test JuMP.has_lower_bound(a[i])
         @test JuMP.lower_bound(a[i]) == 0.1
