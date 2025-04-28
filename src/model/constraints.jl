@@ -24,6 +24,14 @@ struct GPConstraintRef
     index::Int
 end
 
+function Base.show(io::IO, ref::GPConstraintRef)
+    # get the constraint data from the model
+    model = ref.model
+    index = ref.index
+    constraint = model.constraints[index]
+    return print(io, constraint)
+end
+
 struct GPScalarConstraint <: JuMP.AbstractConstraint
     scalar_constraint::JuMP.ScalarConstraint
     negate_dual::Bool

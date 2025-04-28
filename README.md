@@ -3,21 +3,17 @@
 ## Overview
 
 GSOpt.jl is a Julia package that extends JuMP to solve geometric programming (GP) and signomial programming (SP) problems.
-It provides a natural syntax for formulating these problems while handling the necessary transformations to convert them into convex optimization problems.
+The package takes care of the transformation to log-space and allows users to use familiar JuMP syntax to formulate problems.
+
+## Related Packages
+
+- [GPKit](https://github.com/convexengineering/gpkit): A Python package for geometric programming.
 
 ## Installation
 
 ```julia
 using GSOpt
 ```
-
-## Features
-
-- Formulate geometric programming problems using familiar JuMP syntax
-- Automatic transformation to log space for solving
-- Support for posynomial constraints (<=) and monomial equality constraints (==)
-- Minimization of posynomials and maximization of monomials
-- Automatic transformation of solutions back from log space
 
 ## Quick Example
 
@@ -34,7 +30,7 @@ model = GPModel(SCS.Optimizer)
 @variable(model, z ≥ 0.1)
 
 # Define objective (minimize a posynomial)
-@objective(model, Min, x^-1 * y^-1 * z^-1 + x * y * z)
+@objective(model, Min, 1/(x * y * z) + x * y * z)
 
 # Add constraints
 @constraint(model, x * y * z == 1)     # monomial equality constraint
@@ -45,9 +41,7 @@ optimize!(model)
 
 # Get the solution
 println("Optimal solution:")
-println("x = ", value(x))
-println("y = ", value(y))
-println("z = ", value(z))
+println(solution_summary(model))
 ```
 
 ## Mathematical Background
@@ -76,24 +70,8 @@ A posynomial is a sum of monomials:
 f(x) = ∑ᵏ cₖ·x₁^aₖ₁·x₂^aₖ₂·...·xₙ^aₖₙ
 ```
 
-GSOpt.jl transforms these problems into convex form by taking the logarithm of variables, constraints, and objectives.
+A problem of this form is convex in log-form, and can be solved using standard convex optimization solvers.
+
+GSOpt.jl takes care of this transformation internally and the user can formulate problems as they normally would using JuMP.
 
 For more information, see [A Tutorial on Geometric Programming](https://stanford.edu/~boyd/papers/pdf/gp_tutorial.pdf) by Boyd et al. (2007).
-
-## Implementation Details
-
-GSOpt.jl defines the following types:
-
-- `GPModel`: A JuMP model extension for geometric programming
-- `Monomial`: Represents a monomial expression
-- `Posynomial`: Represents a posynomial expression
-
-The package overloads operators like `+`, `*`, and `^` to work with these types, allowing for natural expression of GP problems.
-
-GSOpt.jl is organized into a modular structure:
-
-- `expressions/`: Contains Monomial and Posynomial types with operator overloading
-- `model/`: Contains the GPModel implementation
-- `transformations/`: Handles log-space transformations for constraints and objectives
-
-The package automatically handles the conversion to log-space for solving geometric programming problems, while keeping the sensitivities in the original space.
