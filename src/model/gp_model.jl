@@ -70,7 +70,7 @@ mutable struct GPModel <: JuMP.AbstractModel
     solve_time::Union{Nothing,Float64}
 
     # Constructor
-    function GPModel(; optimizer=nothing, add_bridges=true)
+    function GPModel(; optimizer = nothing, add_bridges = true)
         opt_factory = nothing
         if optimizer !== nothing
             opt_factory = MOI.OptimizerWithAttributes(optimizer)
@@ -85,12 +85,12 @@ mutable struct GPModel <: JuMP.AbstractModel
             Dict{Int,Float64}(), # Empty dictionary for variable values
             nothing, # No objective value yet
             nothing, # No termination status yet
-            nothing # No solve time yet
+            nothing, # No solve time yet
         )
     end
 end
 
-GPModel(optimizer) = GPModel(optimizer=optimizer)
+GPModel(optimizer) = GPModel(optimizer = optimizer)
 
 # Implement required JuMP interface methods for GPModel
 
@@ -115,7 +115,11 @@ Sets the objective function for the geometric programming model.
 # Throws
 - Error if the objective function is not compatible with the optimization sense
 """
-function JuMP.set_objective(model::GPModel, sense::MOI.OptimizationSense, func::AbstractGPExpression)
+function JuMP.set_objective(
+    model::GPModel,
+    sense::MOI.OptimizationSense,
+    func::AbstractGPExpression,
+)
     # Check if the objective function is valid for the given sense
     if sense == MOI.MIN_SENSE
         # For minimization, the objective must be a posynomial
@@ -240,14 +244,19 @@ Returns the number of constraints in the model.
 # Returns
 - The number of constraints matching the specified types, or all constraints if no types specified
 """
-function JuMP.num_constraints(model::GPModel, function_type=nothing, set_type=nothing; count_variable_in_set_constraints::Bool = true)
+function JuMP.num_constraints(
+    model::GPModel,
+    function_type = nothing,
+    set_type = nothing;
+    count_variable_in_set_constraints::Bool = true,
+)
     # If specific function and set types are requested, filter constraints
     if function_type !== nothing && set_type !== nothing
         # For now, we don't track constraint types in detail
         # This could be enhanced in the future
         return 0
     end
-    
+
     # Otherwise return the total number of constraints
     return length(model.constraints)
 end
@@ -264,7 +273,10 @@ function JuMP.list_of_constraint_types(model::GPModel)
     # Return a list of tuples (F, S) where F is the function type and S is the set type
     # For geometric programming, we typically have posynomial <= 1 and monomial == 1 constraints
     # This is a simplified implementation
-    return [(AbstractGPExpression, MOI.LessThan{Float64}), (AbstractGPExpression, MOI.EqualTo{Float64})]
+    return [
+        (AbstractGPExpression, MOI.LessThan{Float64}),
+        (AbstractGPExpression, MOI.EqualTo{Float64}),
+    ]
 end
 
 """
@@ -310,7 +322,8 @@ function JuMP.set_silent(model::GPModel)
 
         # Create a new optimizer with the silent option
         # The MOI.Silent() attribute is the standard way to silence solvers
-        model.optimizer_factory = MOI.OptimizerWithAttributes(optimizer, MOI.Silent() => true)
+        model.optimizer_factory =
+            MOI.OptimizerWithAttributes(optimizer, MOI.Silent() => true)
     end
     return nothing
 end

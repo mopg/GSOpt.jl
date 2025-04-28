@@ -20,7 +20,10 @@ struct MonomialTerm
 
     # Constructor that ensures coefficients are positive for monomial terms
     function MonomialTerm(coef::Real, vars::Dict{GPVariable,<:Real})
-        return new(Float64(coef), Dict{GPVariable,Float64}(k => Float64(v) for (k, v) in vars))
+        return new(
+            Float64(coef),
+            Dict{GPVariable,Float64}(k => Float64(v) for (k, v) in vars),
+        )
     end
 end
 
@@ -201,7 +204,7 @@ function Base.show(io::IO, expr::PosynomialExpression)
     end
 
     print(io, expr.terms[1])
-    for i in 2:length(expr.terms)
+    for i = 2:length(expr.terms)
         print(io, " + ", expr.terms[i])
     end
 end
@@ -213,7 +216,7 @@ function Base.show(io::IO, expr::SignomialExpression)
     end
 
     print(io, expr.terms[1])
-    for i in 2:length(expr.terms)
+    for i = 2:length(expr.terms)
         term = expr.terms[i]
         if term.coefficient < 0
             print(io, " - ", MonomialTerm(-term.coefficient, term.exponents))

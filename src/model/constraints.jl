@@ -68,7 +68,7 @@ end
 function JuMP.add_constraint(
     model::GPModel,
     constr::JuMP.AbstractConstraint,
-    name::String=""
+    name::String = "",
 )
     # Check that all variables in the constraint belong to this model
     vars = constraint_variables(constr)
@@ -89,12 +89,7 @@ function JuMP.add_constraint(
     is_equality = set isa MOI.EqualTo
 
     # Create the constraint data
-    constr_data = GPConstraintData(
-        constr,
-        name,
-        is_equality,
-        is_valid
-    )
+    constr_data = GPConstraintData(constr, name, is_equality, is_valid)
 
     # Add the constraint to the model's constraints list
     push!(model.constraints, constr_data)
@@ -149,9 +144,9 @@ function is_normalized_posynomial_inequality(expr::SignomialExpression)
     rhs = MonomialExpression(MonomialTerm(-neg_term.coefficient, neg_term.exponents))
 
     # Create the left-hand side posynomial
-    lhs = length(pos_terms) == 1 ?
-          MonomialExpression(pos_terms[1]) :
-          PosynomialExpression(pos_terms)
+    lhs =
+        length(pos_terms) == 1 ? MonomialExpression(pos_terms[1]) :
+        PosynomialExpression(pos_terms)
 
     return true, lhs, rhs
 end
@@ -160,7 +155,7 @@ end
 function JuMP.build_constraint(
     _error::Function,
     func::AbstractGPExpression,
-    set::Union{MOI.EqualTo,MOI.LessThan,MOI.GreaterThan}
+    set::Union{MOI.EqualTo,MOI.LessThan,MOI.GreaterThan},
 )
     # Special case handling for SignomialExpressions, which may represent valid GP constraints
     # after JuMP's normalization (e.g., x*y - z == 0 representing x*y == z)
@@ -172,7 +167,9 @@ function JuMP.build_constraint(
                 # Convert to the standard form lhs/rhs == 1 for GP
                 return JuMP.ScalarConstraint(lhs / rhs, MOI.EqualTo(1.0))
             else
-                _error("Equality constraints in geometric programming must involve monomials on both sides")
+                _error(
+                    "Equality constraints in geometric programming must involve monomials on both sides",
+                )
             end
         elseif set isa MOI.GreaterThan
             # Check if this represents a valid monomial > monomial constraint
@@ -181,7 +178,9 @@ function JuMP.build_constraint(
                 # Convert to the standard form rhs/lhs < 1 for GP
                 return JuMP.ScalarConstraint(rhs / lhs, MOI.LessThan(1.0))
             else
-                _error("Inequality constraints in geometric programming must involve monomials on both sides")
+                _error(
+                    "Inequality constraints in geometric programming must involve monomials on both sides",
+                )
             end
         elseif set isa MOI.LessThan
             # Check if this represents a valid posynomial <= monomial constraint
@@ -190,27 +189,37 @@ function JuMP.build_constraint(
                 # Convert to the standard form lhs/rhs <= 1 for GP
                 return JuMP.ScalarConstraint(lhs / rhs, MOI.LessThan(1.0))
             else
-                _error("Inequality constraints in geometric programming must have posynomial LHS and monomial RHS")
+                _error(
+                    "Inequality constraints in geometric programming must have posynomial LHS and monomial RHS",
+                )
             end
         end
     else
         # For equality constraints (==) with value, we require monomials
         if set isa MOI.EqualTo
             if !is_monomial(func)
-                _error("Equality constraints in geometric programming must involve monomials")
+                _error(
+                    "Equality constraints in geometric programming must involve monomials",
+                )
             end
             # Special case: if we're comparing to zero, that's invalid in GP (log(0) = -∞)
             if set.value == 0
-                _error("Equality constraints cannot have zero on the right side in geometric programming")
+                _error(
+                    "Equality constraints cannot have zero on the right side in geometric programming",
+                )
             end
             # For inequality constraints (<=) with value, we require posynomials
         elseif set isa MOI.LessThan
             if !is_posynomial(func)
-                _error("Inequality constraints in geometric programming must be posynomials")
+                _error(
+                    "Inequality constraints in geometric programming must be posynomials",
+                )
             end
             # Special case: if we're comparing to zero, that's invalid in GP (log(0) = -∞)
             if set.value == 0
-                _error("Inequality constraints cannot have zero on the right side in geometric programming")
+                _error(
+                    "Inequality constraints cannot have zero on the right side in geometric programming",
+                )
             end
         end
 
@@ -224,11 +233,13 @@ function JuMP.build_constraint(
     _error::Function,
     lhs::AbstractGPExpression,
     set::MOI.EqualTo{Float64},
-    rhs::AbstractGPExpression
+    rhs::AbstractGPExpression,
 )
     # For equality constraints, check if both sides are monomials
     if !is_monomial(lhs) || !is_monomial(rhs)
-        _error("Equality constraints in geometric programming must have monomial expressions on both sides")
+        _error(
+            "Equality constraints in geometric programming must have monomial expressions on both sides",
+        )
     end
 
     # Handle all combinations of monomial-type expressions
@@ -244,7 +255,7 @@ function JuMP.build_constraint(
     _error::Function,
     lhs::AbstractGPExpression,
     set::MOI.LessThan{Float64},
-    rhs::AbstractGPExpression
+    rhs::AbstractGPExpression,
 )
     # For inequality constraints in GP, the LHS must be a posynomial or monomial,
     # and the RHS must be a monomial
@@ -252,7 +263,9 @@ function JuMP.build_constraint(
     rhs_valid = is_monomial(rhs)
 
     if !lhs_valid || !rhs_valid
-        _error("Inequality constraints in geometric programming must have posynomial or monomial LHS and monomial RHS")
+        _error(
+            "Inequality constraints in geometric programming must have posynomial or monomial LHS and monomial RHS",
+        )
     end
 
     # Convert the right-hand side to a monomial if it's a variable
@@ -270,7 +283,9 @@ function JuMP.build_constraint(
             return JuMP.ScalarConstraint(lhs / rhs_mono, MOI.LessThan(1.0))
         else
             # A true posynomial on the RHS is not a valid constraint in GP
-            _error("Inequality constraints cannot have posynomials on both sides. Try rewriting.")
+            _error(
+                "Inequality constraints cannot have posynomials on both sides. Try rewriting.",
+            )
         end
     else
         _error("Unexpected expression types in inequality constraint")
@@ -287,8 +302,7 @@ end
 # Check if a constraint is valid
 function JuMP.is_valid(model::GPModel, cref::GPConstraintRef)
     # Check if the constraint reference matches the model and index is valid
-    return (cref.model === model &&
-            1 <= cref.index <= length(model.constraints))
+    return (cref.model === model && 1 <= cref.index <= length(model.constraints))
 end
 
 # Get the constraint function
