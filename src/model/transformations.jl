@@ -162,7 +162,7 @@ function transform_inequality!(log_model::JuMP.Model,
         @constraint(log_model, log_terms[1] <= 0.0)
     else
         # Implement the constraint as a log-sum-exp constraint
-        # TODO: reference
+        # from e.g., https://www.seas.ucla.edu/~vandenbe/236C/lectures/conic.pdf (slide 15-12)
         u_aux_constraint = @variable(log_model, [1:length(log_terms)], lower_bound = 0.0)
         @constraint(log_model, sum(u_aux_constraint) <= 1)
         for kk in 1:length(log_terms)
@@ -198,7 +198,7 @@ function transform_objective!(log_model::JuMP.Model,
             @objective(log_model, MOI.MIN_SENSE, single_log_term)
         else
             # Use log-sum-exp for the objective (which turns into an exponential cone)
-            # TODO: reference
+            # from e.g., https://www.seas.ucla.edu/~vandenbe/236C/lectures/conic.pdf (slide 15-12)
 
             @variable(model, objective_variable) # in original space
             normalized_objective_func = obj_func / objective_variable
