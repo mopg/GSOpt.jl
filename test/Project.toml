@@ -1,0 +1,4 @@
+[deps]
+GSOpt = "afa4bbe9-32d2-4464-8373-bc4db7eb00b8"
+SCS = "c946c3f1-0d1f-5ce8-9dea-7daa1f7e2d13"
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
