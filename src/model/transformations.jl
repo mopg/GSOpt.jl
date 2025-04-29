@@ -210,7 +210,6 @@ function transform_objective!(
     obj_func = model.objective_function
     sense = model.objective_sense
 
-
     if obj_func isa PosynomialExpression
 
         if sense != MOI.MIN_SENSE
@@ -328,10 +327,11 @@ function map_solution(
     model.solve_time = JuMP.solve_time(log_model)
 
     # Store constraint dual values if constraint_map is provided
+    obj_value = model.objective_value
     if !isempty(constraint_map)
         model.constraint_duals = Dict{Int,Float64}()
         for (idx, cref) in constraint_map
-            model.constraint_duals[idx] = JuMP.dual(cref)
+            model.constraint_duals[idx] = JuMP.dual(cref) * obj_value
         end
     end
 end

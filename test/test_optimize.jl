@@ -140,9 +140,10 @@ using SCS
         @variable(model, x)
         @variable(model, y)
 
-        @objective(model, Min, 2(x + y))
+        @objective(model, Min, 2(x * y))
 
-        con = @constraint(model, x * y == 4.0)
+        con_x = @constraint(model, x == 2 * y)
+        con_y = @constraint(model, y == 4.0)
 
         # Solve the model
         optimize!(model)
@@ -151,62 +152,40 @@ using SCS
         @test termination_status(model) in
               [MOI.OPTIMAL, MOI.LOCALLY_SOLVED, MOI.ALMOST_OPTIMAL]
 
-        # Check solution values (optimal is x = y = 1)
         opt_vol = value(objective_value(model))
-        @test isapprox(opt_vol, 8.0, rtol = 1e-2)
+        @test isapprox(opt_vol, 64.0, rtol = 1e-2)
 
         # Get the dual value (sensitivity)
-        dual_con = JuMP.dual(con)
+        dual_con_x = JuMP.dual(con_x)
+        dual_con_y = JuMP.dual(con_y)
 
-        @test isapprox(dual_con, 1.0, atol = 1e-3)
+        @test isapprox(dual_con_x, 64.0, atol = 1e-3)
+        @test isapprox(dual_con_y, 128.0, atol = 1e-3)
+
+        # Confirm by resolving the optimization problem
+        model_ϵ1 = GPModel(SCS.Optimizer)
+        JuMP.set_silent(model_ϵ1)
+
+        # Define variables
+        @variable(model_ϵ1, x)
+        @variable(model_ϵ1, y)
+
+        @objective(model_ϵ1, Min, 2(x * y))
+        Δ1 = 1e-2
+        con_x_ϵ1 = @constraint(model_ϵ1, x == 2 * y * (1.0 + Δ1))
+        con_y_ϵ1 = @constraint(model_ϵ1, y == 4.0)
+
+        # Solve the model
+        optimize!(model_ϵ1)
+
+        # Check if the model was solved successfully
+        @test termination_status(model_ϵ1) in
+              [MOI.OPTIMAL, MOI.LOCALLY_SOLVED, MOI.ALMOST_OPTIMAL]
+
+        # Check solution values (optimal is x = y = 1)
+        opt_vol_ϵ1 = value(objective_value(model_ϵ1))
+        Δvol = opt_vol_ϵ1 - opt_vol
+        @test isapprox(Δvol, dual_con_x * Δ1, rtol = 1e-2)
     end
 
-    # @testset "Sensitivity Analysis (Dual Values)" begin
-    #     # Create a geometric programming model for sensitivity analysis
-    #     model = GPModel(optimizer = SCS.Optimizer)
-    #     JuMP.set_silent(model)
-
-    #     # Equation (5) from "A Tutorial on Geometric Programming" by Boyd. et al. (2007)
-    #     # https://stanford.edu/~boyd/papers/pdf/gp_tutorial.pdf
-
-    #     # Define parameters
-    #     A_wall = 200.0
-    #     A_floor = 1000.0
-    #     α = 0.5
-    #     β = 2.0
-    #     γ = 0.5
-    #     δ = 2.0
-
-    #     # Define variables
-    #     @variable(model, h)
-    #     @variable(model, w)
-    #     @variable(model, d)
-
-    #     @objective(model, Max, h * w * d)
-
-    #     wall_con = @constraint(model, 2(h * w + h * d) <= A_wall)
-    #     floor_con = @constraint(model, w * d <= A_floor)
-    #     @constraint(model, h / w <= β)
-    #     @constraint(model, h / w >= α)
-    #     @constraint(model, d / w <= δ)
-    #     @constraint(model, d / w >= γ)
-
-    #     # Solve the model
-    #     optimize!(model)
-
-    #     # Check if the model was solved successfully
-    #     @test termination_status(model) in
-    #           [MOI.OPTIMAL, MOI.LOCALLY_SOLVED, MOI.ALMOST_OPTIMAL]
-
-    #     # Check solution values (optimal is x = y = 1)
-    #     opt_vol = value(objective_value(model))
-    #     @test isapprox(opt_vol, 5632.0, rtol = 1e-2)
-
-    #     # Get the dual value (sensitivity)
-    #     dual_floor = JuMP.dual(floor_con)
-    #     dual_wall = JuMP.dual(wall_con)
-
-    #     @test isapprox(dual_floor, 0.249, atol = 1e-3)
-    #     @test isapprox(dual_wall, 1.251, atol = 1e-3)
-    # end
 end
