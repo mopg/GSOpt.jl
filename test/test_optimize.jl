@@ -130,4 +130,83 @@ using SCS
         @test x_val <= 5.0 + 1e-6
         @test y_val <= 5.0 + 1e-6
     end
+
+    @testset "Simple Sensitivity Analysis (Dual Values)" begin
+        # Create a geometric programming model for sensitivity analysis
+        model = GPModel(SCS.Optimizer)
+        JuMP.set_silent(model)
+
+        # Define variables
+        @variable(model, x)
+        @variable(model, y)
+
+        @objective(model, Min, 2(x + y))
+
+        con = @constraint(model, x * y == 4.0)
+
+        # Solve the model
+        optimize!(model)
+
+        # Check if the model was solved successfully
+        @test termination_status(model) in
+              [MOI.OPTIMAL, MOI.LOCALLY_SOLVED, MOI.ALMOST_OPTIMAL]
+
+        # Check solution values (optimal is x = y = 1)
+        opt_vol = value(objective_value(model))
+        @test isapprox(opt_vol, 8.0, rtol = 1e-2)
+
+        # Get the dual value (sensitivity)
+        dual_con = JuMP.dual(con)
+
+        @test isapprox(dual_con, 1.0, atol = 1e-3)
+    end
+
+    # @testset "Sensitivity Analysis (Dual Values)" begin
+    #     # Create a geometric programming model for sensitivity analysis
+    #     model = GPModel(optimizer = SCS.Optimizer)
+    #     JuMP.set_silent(model)
+
+    #     # Equation (5) from "A Tutorial on Geometric Programming" by Boyd. et al. (2007)
+    #     # https://stanford.edu/~boyd/papers/pdf/gp_tutorial.pdf
+
+    #     # Define parameters
+    #     A_wall = 200.0
+    #     A_floor = 1000.0
+    #     α = 0.5
+    #     β = 2.0
+    #     γ = 0.5
+    #     δ = 2.0
+
+    #     # Define variables
+    #     @variable(model, h)
+    #     @variable(model, w)
+    #     @variable(model, d)
+
+    #     @objective(model, Max, h * w * d)
+
+    #     wall_con = @constraint(model, 2(h * w + h * d) <= A_wall)
+    #     floor_con = @constraint(model, w * d <= A_floor)
+    #     @constraint(model, h / w <= β)
+    #     @constraint(model, h / w >= α)
+    #     @constraint(model, d / w <= δ)
+    #     @constraint(model, d / w >= γ)
+
+    #     # Solve the model
+    #     optimize!(model)
+
+    #     # Check if the model was solved successfully
+    #     @test termination_status(model) in
+    #           [MOI.OPTIMAL, MOI.LOCALLY_SOLVED, MOI.ALMOST_OPTIMAL]
+
+    #     # Check solution values (optimal is x = y = 1)
+    #     opt_vol = value(objective_value(model))
+    #     @test isapprox(opt_vol, 5632.0, rtol = 1e-2)
+
+    #     # Get the dual value (sensitivity)
+    #     dual_floor = JuMP.dual(floor_con)
+    #     dual_wall = JuMP.dual(wall_con)
+
+    #     @test isapprox(dual_floor, 0.249, atol = 1e-3)
+    #     @test isapprox(dual_wall, 1.251, atol = 1e-3)
+    # end
 end

@@ -9,7 +9,16 @@ Constraints are validated at creation time to ensure they conform to geometric
 programming rules.
 """
 
-# Define a constraint reference type for our GPModel
+
+"""
+    GPConstraintRef
+
+A reference to a constraint in a geometric programming model.
+
+# Fields
+- `model::GPModel`: The geometric programming model
+- `index::Int`: The index of the constraint in the model's constraints vector
+"""
 struct GPConstraintRef
     model::GPModel
     index::Int
@@ -309,4 +318,40 @@ end
 function JuMP.constraint_object(cref::GPConstraintRef)
     # Return the JuMP constraint object
     return cref.model.constraints[cref.index].constraint
+end
+
+
+"""
+    JuMP.dual(cref::GPConstraintRef) -> Float64
+
+Returns the dual value (sensitivity) of the constraint.
+
+# Arguments
+- `cref::GPConstraintRef`: The constraint reference
+
+# Returns
+- The dual value of the constraint
+
+# Throws
+- Error if the model has not been solved yet or if dual values are not available
+"""
+function JuMP.dual(cref::GPConstraintRef)
+    model = cref.model
+
+    # Check if the model has been solved
+    if isnothing(model.termination_status)
+        error("Model has not been solved yet")
+    end
+
+    # Check if dual values are available
+    if isnothing(model.constraint_duals)
+        error("Dual values not available. Make sure the solver supports dual values.")
+    end
+
+    # Get the dual value for this constraint
+    if haskey(model.constraint_duals, cref.index)
+        return model.constraint_duals[cref.index]
+    else
+        error("Dual value not available for this constraint")
+    end
 end

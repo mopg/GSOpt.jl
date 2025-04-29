@@ -55,29 +55,36 @@ function create_log_model(model::GPModel)
     # Map from original variables to log-transformed variables
     var_map = Dict{GPVariable,JuMP.VariableRef}()
 
+    # Map from original constraint indices to transformed constraint references
+    constraint_map = Dict{Int,JuMP.ConstraintRef}()
+
     # Transform variables: x -> log(x)
     for var in model.variables
         transform_variable!(log_model, var, var_map)
     end
 
     # Transform constraints
-    for constr_data in model.constraints
+    for (i, constr_data) in enumerate(model.constraints)
         constraint = constr_data.constraint
 
         # Get the constraint function and set
         func = JuMP.jump_function(constraint)
         set = JuMP.moi_set(constraint)
 
-        # Transform the constraint based on its type
+        # Transform the constraint based on its type and store the reference
+        local cref
         if constr_data.is_equality
             # Monomial equality constraint: m1 == m2 becomes log(m1) == log(m2)
             # In standard form: m1/m2 == 1 becomes log(m1) - log(m2) == 0
-            transform_equality!(log_model, func, set, var_map)
+            cref = transform_equality!(log_model, func, set, var_map)
         else
             # Posynomial inequality constraint: p <= m becomes log(p) <= log(m)
             # In standard form: p/m <= 1 becomes log-sum-exp(...) <= 0
-            transform_inequality!(log_model, func, set, var_map)
+            cref = transform_inequality!(log_model, func, set, var_map)
         end
+
+        # Store the mapping from original constraint index to transformed constraint reference
+        constraint_map[i] = cref
     end
 
     # Transform the objective function
@@ -85,7 +92,7 @@ function create_log_model(model::GPModel)
         transform_objective!(log_model, model, var_map)
     end
 
-    return log_model, var_map
+    return log_model, var_map, constraint_map
 end
 
 # Transform a monomial equality constraint to log space
@@ -95,6 +102,7 @@ function transform_equality!(
     set::MOI.EqualTo,
     var_map::Dict{GPVariable,JuMP.VariableRef},
 )
+    # Return the constraint reference for mapping dual values
     # In standard form, the constraint is: m/C = 1, or log(m) = log(C)
     # The monomial m = C * x1^a1 * x2^a2 * ... becomes 
     # log(m) = log(C) + a1*log(x1) + a2*log(x2) + ...
@@ -108,11 +116,14 @@ function transform_equality!(
     end
 
     # Add the constraint: log(m) = log(set.value)
+    local cref
     if set.value == 1.0
-        @constraint(log_model, log_expr == 0.0)
+        cref = @constraint(log_model, log_expr == 0.0)
     else
-        @constraint(log_model, log_expr == log(set.value))
+        cref = @constraint(log_model, log_expr == log(set.value))
     end
+
+    return cref
 end
 
 # Transform a monomial inequality constraint to log space
@@ -122,6 +133,7 @@ function transform_inequality!(
     set::MOI.LessThan,
     var_map::Dict{GPVariable,JuMP.VariableRef},
 )
+    # Return the constraint reference for mapping dual values
     # In standard form, the constraint is: m/C <= 1, or log(m) <= log(C)
     # The monomial m = C * x1^a1 * x2^a2 * ... becomes 
     # log(m) = log(C) + a1*log(x1) + a2*log(x2) + ...
@@ -145,6 +157,7 @@ function transform_inequality!(
     set::MOI.LessThan,
     var_map::Dict{GPVariable,JuMP.VariableRef},
 )
+    # Return the constraint reference for mapping dual values
     # In standard form, the constraint is: p/C <= 1, or log(p) <= log(C)
     # For a posynomial p = sum_i (C_i * prod_j x_j^a_ij), we use the fact that:
     # log(sum_i exp(y_i)) is convex, where y_i = log(C_i * prod_j x_j^a_ij)
@@ -167,14 +180,16 @@ function transform_inequality!(
     end
 
     # Create the log-sum-exp constraint: log(sum_i exp(log_terms_i)) <= log(set.upper)
+    local cref
     if length(log_terms) == 1
         # If there's only one term, it simplifies to a linear constraint
-        @constraint(log_model, log_terms[1] <= 0.0)
+        cref = @constraint(log_model, log_terms[1] <= 0.0)
     else
         # Implement the constraint as a log-sum-exp constraint
         # from e.g., https://www.seas.ucla.edu/~vandenbe/236C/lectures/conic.pdf (slide 15-12)
         u_aux_constraint = @variable(log_model, [1:length(log_terms)], lower_bound = 0.0)
-        @constraint(log_model, sum(u_aux_constraint) <= 1)
+        # TODO: this cref is not correct
+        cref = @constraint(log_model, sum(u_aux_constraint) <= 1)
         for kk = 1:length(log_terms)
             @constraint(
                 log_model,
@@ -182,6 +197,8 @@ function transform_inequality!(
             )
         end
     end
+
+    return cref
 end
 
 # Transform the objective function
@@ -269,6 +286,7 @@ function map_solution(
     model::GPModel,
     log_model::JuMP.Model,
     var_map::Dict{GPVariable,JuMP.VariableRef},
+    constraint_map::Dict{Int,JuMP.ConstraintRef} = Dict{Int,JuMP.ConstraintRef}(),
 )
     # Check if the model was solved successfully
     term_status = JuMP.termination_status(log_model)
@@ -308,4 +326,12 @@ function map_solution(
 
     # Store the solve time
     model.solve_time = JuMP.solve_time(log_model)
+
+    # Store constraint dual values if constraint_map is provided
+    if !isempty(constraint_map)
+        model.constraint_duals = Dict{Int,Float64}()
+        for (idx, cref) in constraint_map
+            model.constraint_duals[idx] = JuMP.dual(cref)
+        end
+    end
 end
