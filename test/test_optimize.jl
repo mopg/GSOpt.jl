@@ -130,4 +130,87 @@ using SCS
         @test x_val <= 5.0 + 1e-6
         @test y_val <= 5.0 + 1e-6
     end
+
+    @testset "Simple Sensitivity Analysis (Dual Values)" begin
+        # Create a geometric programming model for sensitivity analysis
+        model = GPModel(SCS.Optimizer)
+        JuMP.set_silent(model)
+
+        # Define variables
+        @variable(model, x)
+        @variable(model, y)
+
+        @objective(model, Min, 2(x * y))
+
+        con_x = @constraint(model, x >= 2 * y)
+        con_y = @constraint(model, y == 4.0)
+
+        # Solve the model
+        optimize!(model)
+
+        # Check if the model was solved successfully
+        @test termination_status(model) in
+              [MOI.OPTIMAL, MOI.LOCALLY_SOLVED, MOI.ALMOST_OPTIMAL]
+
+        opt_vol = value(objective_value(model))
+        @test isapprox(opt_vol, 64.0, rtol = 1e-2)
+
+        # Get the dual value (sensitivity)
+        dual_con_x = JuMP.dual(con_x)
+        dual_con_y = JuMP.dual(con_y)
+
+        @test isapprox(dual_con_x, 64.0, atol = 1e-3)
+        @test isapprox(dual_con_y, 128.0, atol = 1e-3)
+
+        # Confirm by resolving the optimization problem for first constraint
+        model_ϵ1 = GPModel(SCS.Optimizer)
+        JuMP.set_silent(model_ϵ1)
+
+        # Define variables
+        @variable(model_ϵ1, x)
+        @variable(model_ϵ1, y)
+
+        @objective(model_ϵ1, Min, 2(x * y))
+        Δ1 = 1e-2
+        con_x_ϵ1 = @constraint(model_ϵ1, x >= 2 * y * (1.0 + Δ1))
+        con_y_ϵ1 = @constraint(model_ϵ1, y == 4.0)
+
+        # Solve the model
+        optimize!(model_ϵ1)
+
+        # Check if the model was solved successfully
+        @test termination_status(model_ϵ1) in
+              [MOI.OPTIMAL, MOI.LOCALLY_SOLVED, MOI.ALMOST_OPTIMAL]
+
+        # Check solution values (optimal is x = y = 1)
+        opt_vol_ϵ1 = value(objective_value(model_ϵ1))
+        Δvol = opt_vol_ϵ1 - opt_vol
+        @test isapprox(Δvol, dual_con_x * Δ1, rtol = 1e-2)
+
+        # Confirm by resolving the optimization problem for second constraint
+        model_ϵ2 = GPModel(SCS.Optimizer)
+        JuMP.set_silent(model_ϵ2)
+
+        # Define variables
+        @variable(model_ϵ2, x)
+        @variable(model_ϵ2, y)
+
+        @objective(model_ϵ2, Min, 2(x * y))
+        Δ2 = 1e-2
+        con_x_ϵ2 = @constraint(model_ϵ2, x >= 2 * y)
+        con_y_ϵ2 = @constraint(model_ϵ2, y == 4.0 * (1.0 + Δ2))
+
+        # Solve the model
+        optimize!(model_ϵ2)
+
+        # Check if the model was solved successfully
+        @test termination_status(model_ϵ2) in
+              [MOI.OPTIMAL, MOI.LOCALLY_SOLVED, MOI.ALMOST_OPTIMAL]
+
+        # Check solution values (optimal is x = y = 1)
+        opt_vol_ϵ2 = value(objective_value(model_ϵ2))
+        Δvol = opt_vol_ϵ2 - opt_vol
+        @test isapprox(Δvol, dual_con_y * Δ2, rtol = 1e-2)
+    end
+
 end

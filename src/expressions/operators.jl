@@ -715,6 +715,10 @@ function MA.add_mul(x::MonomialExpression, y::GPVariable, z::Real)
     return MA.add_mul(x, z, y) # Reuse the implementation above
 end
 
+function MA.add_mul(x::MonomialExpression, y::GPVariable, z::GPVariable)
+    return MA.add_mul(x, 1.0, y * z)
+end
+
 function MA.add_mul(x::MonomialExpression, y::Real, z::MonomialExpression)
     if y <= 0
         error("Coefficients in geometric programming must be positive")

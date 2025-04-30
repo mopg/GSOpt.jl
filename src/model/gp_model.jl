@@ -68,6 +68,7 @@ mutable struct GPModel <: JuMP.AbstractModel
     objective_value::Union{Nothing,Float64}
     termination_status::Union{Nothing,MOI.TerminationStatusCode}
     solve_time::Union{Nothing,Float64}
+    constraint_duals::Union{Nothing,Dict{Int,Float64}} # Maps constraint index to dual value
 
     # Constructor
     function GPModel(; optimizer = nothing, add_bridges = true)
@@ -86,6 +87,7 @@ mutable struct GPModel <: JuMP.AbstractModel
             nothing, # No objective value yet
             nothing, # No termination status yet
             nothing, # No solve time yet
+            nothing, # No constraint duals yet
         )
     end
 end
@@ -161,17 +163,25 @@ function JuMP.optimize!(model::GPModel)
         error("No objective function set in the model")
     end
 
-    # Create the log-transformed convex optimization model
-    log_model, var_map = create_log_model(model)
+    # Create the log-transformed convex optimization model with constraint mapping
+    log_model, var_map, constraint_map = create_log_model(model)
+
+    # Record the start time
+    start_time = time()
 
     # Solve the log-transformed model
     JuMP.optimize!(log_model)
 
-    # Map the solution back to the original variables
-    map_solution(model, log_model, var_map)
+    # Record the end time
+    end_time = time()
 
-    return
+    # Map the solution back to the original variables
+    map_solution(model, log_model, var_map, constraint_map)
+
+    # Return the model
+    return model
 end
+
 """
     JuMP.termination_status(model::GPModel) -> MOI.TerminationStatusCode
 
