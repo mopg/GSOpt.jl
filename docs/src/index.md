@@ -1,44 +1,32 @@
 # GSOpt.jl
 
-_Geometric Programming for JuMP_
+_Geometric and Signomial Programming for JuMP_
 
 ## Overview
 
-GSOpt.jl is a Julia package that extends [JuMP](https://jump.dev/) to solve geometric programming (GP) problems. It provides a natural syntax for formulating these problems while handling the necessary transformations to convert them into convex optimization problems.
+GSOpt.jl is a Julia package that extends [JuMP](https://jump.dev/) to solve geometric programming (GP) and signomial programming (SP) problems.
 
-## Features
+## Related Packages
 
-- Formulate geometric programming problems using familiar JuMP syntax
-- Automatic transformation to log space for solving
-- Support for posynomial constraints (≤) and monomial equality constraints (==)
-- Minimization of posynomials and maximization of monomials
-- Automatic transformation of solutions back from log space
-- Uses SCS solver for handling exponential cones
+- [GPKit](https://github.com/convexengineering/gpkit): A Python package for geometric and signomial programming.
 
 ## Installation
 
-This package is not yet registered. You can install it from GitHub:
+You can install it from the registry
 
 ```julia
-import Pkg
-Pkg.add(url="https://github.com/username/GSOpt.jl")
-```
-
-Or from your local directory:
-
-```julia
-import Pkg
-Pkg.develop(path="/path/to/GSOpt.jl")
+using GSOpt
 ```
 
 ## Quick Example
 
-```julia
+```@example
 using GSOpt
 using SCS
 
 # Create a geometric programming model
 model = GPModel(optimizer=SCS.Optimizer)
+set_silent(model)
 
 # Define variables
 @variable(model, x ≥ 0.1)
@@ -46,7 +34,7 @@ model = GPModel(optimizer=SCS.Optimizer)
 @variable(model, z ≥ 0.1)
 
 # Define objective (minimize a posynomial)
-@objective(model, Min, x^-1 * y^-1 * z^-1 + x * y * z)
+@objective(model, Min, 1/(x * y * z) + x * y * z)
 
 # Add constraints
 @constraint(model, x * y * z == 1)  # monomial equality constraint
@@ -56,10 +44,7 @@ model = GPModel(optimizer=SCS.Optimizer)
 optimize!(model)
 
 # Get the solution
-println("Optimal solution:")
-println("x = ", value(x))
-println("y = ", value(y))
-println("z = ", value(z))
+solution_summary(model, verbose=true)
 ```
 
 ## Documentation
@@ -67,8 +52,5 @@ println("z = ", value(z))
 For more detailed information, please refer to the following sections:
 
 - [Getting Started](@ref) - Introduction to geometric programming with GSOpt.jl
-- [Expressions](@ref) - Working with monomials and posynomials
-- [Models](@ref) - Creating and working with GP models
-- [Constraints](@ref) - Adding constraints to your model
 - [Examples](@ref) - Complete examples of geometric programming problems
 - [API Reference](@ref) - Detailed documentation of all exported functions and types

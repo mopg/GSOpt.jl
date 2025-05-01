@@ -12,15 +12,10 @@ makedocs(
     ),
     modules = [GSOpt],
     authors = "mopg",
+    checkdocs = :exports,
     pages = [
         "Home" => "index.md",
-        "Manual" => [
-            "Getting Started" => "manual/getting_started.md",
-            "Expressions" => "manual/expressions.md",
-            "Models" => "manual/models.md",
-            "Constraints" => "manual/constraints.md",
-            "Transformations" => "manual/transformations.md",
-        ],
+        "Overview" => ["Getting Started" => "overview/getting_started.md"],
         "Examples" => "examples.md",
         "API Reference" => "api.md",
     ],

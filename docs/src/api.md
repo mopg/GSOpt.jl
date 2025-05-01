@@ -8,15 +8,5 @@ These functions are used internally by GSOpt.jl but may be useful for understand
 
 ```@autodocs
 Modules = [GSOpt]
-Pages   = ["model/transformations.jl"]
-```
-
-```@autodocs
-Modules = [GSOpt]
-Pages   = ["model/constraints.jl"]
-```
-
-```@autodocs
-Modules = [GSOpt]
-Pages   = ["expressions/expressions.jl"]
+Private = false
 ```

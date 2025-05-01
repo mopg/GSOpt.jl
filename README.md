@@ -7,7 +7,7 @@ The package takes care of the transformation to log-space and allows users to us
 
 ## Related Packages
 
-- [GPKit](https://github.com/convexengineering/gpkit): A Python package for geometric programming.
+- [GPKit](https://github.com/convexengineering/gpkit): A Python package for geometric and signomial programming.
 
 ## Installation
 
