@@ -1,7 +1,7 @@
 name = "GSOpt"
 uuid = "afa4bbe9-32d2-4464-8373-bc4db7eb00b8"
 authors = ["mopg <11822896+mopg@users.noreply.github.com>"]
-version = "0.1.0"
+version = "0.2.0"
 
 [deps]
 JuMP = "4076af6c-e467-56ae-b986-b466b2749572"
