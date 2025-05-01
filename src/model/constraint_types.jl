@@ -25,3 +25,8 @@ struct GPConstraintData
     is_valid_gp::Bool
     negate_dual::Bool
 end
+
+function Base.show(io::IO, cd::GPConstraintData)
+    str = JuMP.constraint_string(MIME("text/plain"), cd.constraint)
+    return print(io, str)
+end

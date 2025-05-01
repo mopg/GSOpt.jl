@@ -27,6 +27,14 @@ struct MonomialTerm
     end
 end
 
+function JuMP.function_string(::MIME"text/plain", term::MonomialTerm)
+    exponents_str_vec =
+        [(exp != 1 ? "$(name(var))^$(exp)" : name(var)) for (var, exp) in term.exponents]
+
+    exponents_str = join(exponents_str_vec, " * ")
+    return "$(term.coefficient) * $exponents_str"
+end
+
 """
     MonomialExpression <: AbstractGPExpression
 
@@ -55,6 +63,11 @@ struct MonomialExpression <: AbstractGPExpression
         return new(term)
     end
 end
+
+function JuMP.function_string(::MIME"text/plain", M::MonomialExpression)
+    return JuMP.function_string(MIME("text/plain"), M.term)
+end
+
 
 """
     PosynomialExpression <: AbstractGPExpression
@@ -90,6 +103,8 @@ struct PosynomialExpression <: AbstractGPExpression
     end
 end
 
+
+
 """
     SignomialExpression <: AbstractGPExpression
 
@@ -114,6 +129,14 @@ struct SignomialExpression <: AbstractGPExpression
     function SignomialExpression(expr::MonomialExpression)
         return new([expr.term])
     end
+end
+
+function JuMP.function_string(
+    ::MIME"text/plain",
+    P::Union{PosynomialExpression,SignomialExpression},
+)
+    terms_str = [JuMP.function_string(MIME("text/plain"), term) for term in P.terms]
+    return join(terms_str, " + ")
 end
 
 # Utility functions to check expression types
