@@ -36,18 +36,7 @@ value(y)
 objective_value(model)
 ```
 """
-# Type to store original variable info without creating a JuMP variable yet
-struct GPVariableInfo
-    name::String
-    lower_bound::Float64
-    upper_bound::Union{Float64,Nothing}
-    fixed_value::Union{Float64,Nothing}
-    start::Union{Float64,Nothing}
-    binary::Bool
-    integer::Bool
-end
-
-mutable struct GPModel <: JuMP.AbstractModel
+mutable struct GPModel <: AbstractSpGpModel
     # The optimizer that will be used when we create the transformed model
     optimizer_factory::Union{Nothing,MOI.OptimizerWithAttributes}
 
@@ -63,19 +52,12 @@ mutable struct GPModel <: JuMP.AbstractModel
     # Objective function (a posynomial for minimization, a monomial for maximization)
     objective_function::Union{Nothing,AbstractGPExpression}
 
-    # Solution information
-    variable_values::Dict{Int,Float64} # Maps variable index to value
-    objective_value::Union{Nothing,Float64}
-    termination_status::Union{Nothing,MOI.TerminationStatusCode}
-    solve_time::Union{Nothing,Float64}
-    constraint_duals::Union{Nothing,Dict{Int,Float64}} # Maps constraint index to dual value
+    solution_info::ModelSolutionInfo
 
     # Constructor
     function GPModel(; optimizer = nothing, add_bridges = true)
-        opt_factory = nothing
-        if optimizer !== nothing
-            opt_factory = MOI.OptimizerWithAttributes(optimizer)
-        end
+        opt_factory =
+            optimizer !== nothing ? MOI.OptimizerWithAttributes(optimizer) : nothing
 
         return new(
             opt_factory,
@@ -83,26 +65,12 @@ mutable struct GPModel <: JuMP.AbstractModel
             GPConstraintData[], # Constraints vector
             MOI.MIN_SENSE, # Default objective sense
             nothing, # No objective function yet
-            Dict{Int,Float64}(), # Empty dictionary for variable values
-            nothing, # No objective value yet
-            nothing, # No termination status yet
-            nothing, # No solve time yet
-            nothing, # No constraint duals yet
+            ModelSolutionInfo(),
         )
     end
 end
 
 GPModel(optimizer) = GPModel(optimizer = optimizer)
-
-# Implement required JuMP interface methods for GPModel
-
-"""
-    JuMP.object_dictionary(model::GPModel) -> Dict{Symbol,Any}
-
-Returns a dictionary of named objects in the model.
-This is part of the JuMP interface for models.
-"""
-JuMP.object_dictionary(model::GPModel) = Dict{Symbol,Any}()
 
 """
     JuMP.set_objective(model::GPModel, sense::MOI.OptimizationSense, func::AbstractGPExpression)
@@ -126,7 +94,7 @@ function JuMP.set_objective(
     if sense == MOI.MIN_SENSE
         # For minimization, the objective must be a posynomial
         if !is_posynomial(func)
-            error("Minimization objective must be a posynomial")
+            error("Minimization objective must be a posynomial, or monomial")
         end
     elseif sense == MOI.MAX_SENSE
         # For maximization, the objective must be a monomial
@@ -166,145 +134,14 @@ function JuMP.optimize!(model::GPModel)
     # Create the log-transformed convex optimization model with constraint mapping
     log_model, var_map, constraint_map = create_log_model(model)
 
-    # Record the start time
-    start_time = time()
-
     # Solve the log-transformed model
     JuMP.optimize!(log_model)
-
-    # Record the end time
-    end_time = time()
 
     # Map the solution back to the original variables
     map_solution(model, log_model, var_map, constraint_map)
 
     # Return the model
     return model
-end
-
-"""
-    JuMP.termination_status(model::GPModel) -> MOI.TerminationStatusCode
-
-Returns the termination status of the optimization.
-"""
-function JuMP.termination_status(model::GPModel)
-    return model.termination_status
-end
-
-"""
-    JuMP.objective_value(model::GPModel) -> Float64
-
-Returns the objective value after optimization.
-
-# Throws
-- Error if the model has not been solved yet
-"""
-function JuMP.objective_value(model::GPModel)
-    if isnothing(model.objective_value)
-        error("Model has not been solved yet")
-    end
-    return model.objective_value
-end
-
-"""
-    JuMP.solve_time(model::GPModel) -> Float64
-
-Returns the time (in seconds) it took to solve the model.
-
-# Throws
-- Error if the model has not been solved yet
-"""
-function JuMP.solve_time(model::GPModel)
-    if isnothing(model.solve_time)
-        error("Model has not been solved yet")
-    end
-    return model.solve_time
-end
-
-"""
-    JuMP.objective_sense(model::GPModel) -> MOI.OptimizationSense
-
-Returns the optimization sense of the model (minimization or maximization).
-"""
-function JuMP.objective_sense(model::GPModel)
-    return model.objective_sense
-end
-
-"""
-    JuMP.num_variables(model::GPModel) -> Int
-
-Returns the number of variables in the model.
-"""
-function JuMP.num_variables(model::GPModel)
-    return length(model.variables)
-end
-
-"""
-    JuMP.num_constraints(model::GPModel, function_type=nothing, set_type=nothing; 
-                         count_variable_in_set_constraints::Bool = true) -> Int
-
-Returns the number of constraints in the model.
-
-# Arguments
-- `model::GPModel`: The geometric programming model
-- `function_type`: Optional type of constraint function to count
-- `set_type`: Optional type of constraint set to count
-- `count_variable_in_set_constraints::Bool`: Whether to count variable bounds as constraints
-
-# Returns
-- The number of constraints matching the specified types, or all constraints if no types specified
-"""
-function JuMP.num_constraints(
-    model::GPModel,
-    function_type = nothing,
-    set_type = nothing;
-    count_variable_in_set_constraints::Bool = true,
-)
-    # If specific function and set types are requested, filter constraints
-    if function_type !== nothing && set_type !== nothing
-        # For now, we don't track constraint types in detail
-        # This could be enhanced in the future
-        return 0
-    end
-
-    # Otherwise return the total number of constraints
-    return length(model.constraints)
-end
-
-"""
-    JuMP.list_of_constraint_types(model::GPModel) -> Vector{Tuple{DataType,DataType}}
-
-Returns a list of constraint types in the model as (function_type, set_type) tuples.
-
-# Returns
-- A vector of tuples where each tuple contains the function type and set type of a constraint
-"""
-function JuMP.list_of_constraint_types(model::GPModel)
-    # Return a list of tuples (F, S) where F is the function type and S is the set type
-    # For geometric programming, we typically have posynomial <= 1 and monomial == 1 constraints
-    # This is a simplified implementation
-    return [
-        (AbstractGPExpression, MOI.LessThan{Float64}),
-        (AbstractGPExpression, MOI.EqualTo{Float64}),
-    ]
-end
-
-"""
-    JuMP.objective_function(model::GPModel) -> AbstractGPExpression
-
-Returns the objective function of the model.
-"""
-function JuMP.objective_function(model::GPModel)
-    return model.objective_function
-end
-
-"""
-    JuMP.objective_function_type(model::GPModel) -> DataType
-
-Returns the type of the objective function.
-"""
-function JuMP.objective_function_type(model::GPModel)
-    return AbstractGPExpression
 end
 
 """
@@ -319,24 +156,6 @@ function Base.show(io::IO, model::GPModel)
     print(io, "\n └ Number of constraints: ", JuMP.num_constraints(model))
 end
 
-"""
-    JuMP.set_silent(model::GPModel)
-
-Sets the model to silent mode, suppressing solver output.
-"""
-function JuMP.set_silent(model::GPModel)
-    # If we have an optimizer, set it to silent mode
-    if !isnothing(model.optimizer_factory)
-        # Get the current optimizer constructor
-        optimizer = model.optimizer_factory.optimizer_constructor
-
-        # Create a new optimizer with the silent option
-        # The MOI.Silent() attribute is the standard way to silence solvers
-        model.optimizer_factory =
-            MOI.OptimizerWithAttributes(optimizer, MOI.Silent() => true)
-    end
-    return nothing
-end
 
 struct _GPSolutionSummary
     termination_status::MOI.TerminationStatusCode
@@ -365,18 +184,21 @@ function JuMP.solution_summary(model::GPModel; result::Int = 1, verbose::Bool = 
 
     # Extract variable values if available
     var_values = Dict{String,Float64}()
-    if !isnothing(model.variable_values) && !isempty(model.variable_values)
+    if !isnothing(model.solution_info.variable_values) &&
+       !isempty(model.solution_info.variable_values)
         for var in model.variables
-            if haskey(model.variable_values, var.index)
-                var_values[var.name] = model.variable_values[var.index]
+            if haskey(model.solution_info.variable_values, JuMP.index(var))
+                var_values[JuMP.name(var)] =
+                    model.solution_info.variable_values[JuMP.index(var)]
             end
         end
     end
 
     # Extract constraint duals if available
     constraint_duals = Dict{Int,Float64}()
-    if !isnothing(model.constraint_duals) && !isempty(model.constraint_duals)
-        constraint_duals = copy(model.constraint_duals)
+    if !isnothing(model.solution_info.constraint_duals) &&
+       !isempty(model.solution_info.constraint_duals)
+        constraint_duals = copy(model.solution_info.constraint_duals)
     end
 
     return _GPSolutionSummary(

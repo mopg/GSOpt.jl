@@ -11,13 +11,25 @@ Defined separately to avoid circular dependencies.
 Abstract type for variables in geometric programming models.
 Extends JuMP's AbstractVariableRef to ensure compatibility with JuMP's interface.
 """
-abstract type AbstractGPVariable <: JuMP.AbstractVariableRef end
+abstract type AbstractSPGPVariable <: JuMP.AbstractVariableRef end
+abstract type AbstractSPVariable <: AbstractSPGPVariable end
+abstract type AbstractGPVariable <: AbstractSPGPVariable end
+
 
 """
-    AbstractGPExpression <: JuMP.AbstractJuMPScalar
+    AbstractGPSPExpression <: JuMP.AbstractJuMPScalar
 
-Abstract type for expressions in geometric programming models.
+Abstract type for expressions in geometric and signomialprogramming models.
 Extends JuMP's AbstractJuMPScalar to ensure compatibility with JuMP's interface.
 Subtypes include MonomialExpression, PosynomialExpression, and SignomialExpression.
 """
-abstract type AbstractGPExpression <: JuMP.AbstractJuMPScalar end
+abstract type AbstractGPSPExpression <: JuMP.AbstractJuMPScalar end
+
+"""
+    AbstractGPExpression <: AbstractGPSPExpression
+
+Abstract type for expressions in geometric programming models.
+Extends JuMP's AbstractJuMPScalar to ensure compatibility with JuMP's interface.
+Subtypes include MonomialExpression and PosynomialExpression.
+"""
+abstract type AbstractGPExpression <: AbstractGPSPExpression end

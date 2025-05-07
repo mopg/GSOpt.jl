@@ -9,6 +9,8 @@ Constraints are validated at creation time to ensure they conform to geometric
 programming rules.
 """
 
+abstract type ConstraintRef end
+
 
 """
     GPConstraintRef
@@ -19,12 +21,26 @@ A reference to a constraint in a geometric programming model.
 - `model::GPModel`: The geometric programming model
 - `index::Int`: The index of the constraint in the model's constraints vector
 """
-struct GPConstraintRef
+struct GPConstraintRef <: ConstraintRef
     model::GPModel
     index::Int
 end
 
-function Base.show(io::IO, ref::GPConstraintRef)
+"""
+    SPConstraintRef
+
+A reference to a constraint in a signomial programming model.
+
+# Fields
+- `model::SPModel`: The signomial programming model
+- `index::Int`: The index of the constraint in the model's constraints vector
+"""
+struct SPConstraintRef <: ConstraintRef
+    model::SPModel
+    index::Int
+end
+
+function Base.show(io::IO, ref::ConstraintRef)
     # get the constraint data from the model
     model = ref.model
     index = ref.index
@@ -35,23 +51,25 @@ end
 struct GPScalarConstraint <: JuMP.AbstractConstraint
     scalar_constraint::JuMP.ScalarConstraint
     negate_dual::Bool
+    is_signomial_constraint::Bool
 end
 
 function GPScalarConstraint(
     scalar_constraint::JuMP.ScalarConstraint;
     negate_dual::Bool = false,
+    is_signomial_constraint::Bool = false,
 )
-    return GPScalarConstraint(scalar_constraint, negate_dual)
+    return GPScalarConstraint(scalar_constraint, negate_dual, is_signomial_constraint)
 end
 
 # Make our expression types compatible with JuMP's constraint system
-# These methods allow AbstractGPExpression types to be used in JuMP constraints
-Base.broadcastable(x::AbstractGPExpression) = Ref(x)
-Base.convert(::Type{JuMP.AbstractJuMPScalar}, x::AbstractGPExpression) = x
+# These methods allow AbstractGPSPExpression types to be used in JuMP constraints
+Base.broadcastable(x::AbstractGPSPExpression) = Ref(x)
+Base.convert(::Type{JuMP.AbstractJuMPScalar}, x::AbstractGPSPExpression) = x
 
 # Enable JuMP to create ScalarConstraint with our custom types
-function JuMP.ScalarConstraint(func::AbstractGPExpression, set::MOI.AbstractScalarSet)
-    return JuMP.ScalarConstraint{AbstractGPExpression,typeof(set)}(func, set)
+function JuMP.ScalarConstraint(func::AbstractGPSPExpression, set::MOI.AbstractScalarSet)
+    return JuMP.ScalarConstraint{AbstractGPSPExpression,typeof(set)}(func, set)
 end
 
 # Extract variables from a constraint function (for AffExpr and QuadExpr functions)
@@ -88,8 +106,28 @@ function is_valid_gp_constraint(constr::JuMP.ScalarConstraint)
     end
 end
 
+# Check if a constraint is a valid SP constraint
+function is_valid_sp_constraint(constr::JuMP.ScalarConstraint)
+    func = JuMP.jump_function(constr)
+    set = JuMP.moi_set(constr)
+
+    if set isa MOI.EqualTo
+        # For equality constraints, both sides must be monomials
+        return is_monomial(func)
+    elseif set isa MOI.LessThan
+        # For inequality (less than) constraints, the expression must be a posynomial
+        return is_signomial(func)
+    else
+        return is_signomial(func)
+    end
+end
+
 # Add a constraint to the GPModel
 function JuMP.add_constraint(model::GPModel, constr::GPScalarConstraint, name::String = "")
+
+    if constr.is_signomial_constraint
+        error("Signomial constraints are not supported for geometric programming")
+    end
 
     jump_constr = constr.scalar_constraint
 
@@ -123,62 +161,85 @@ function JuMP.add_constraint(model::GPModel, constr::GPScalarConstraint, name::S
     return GPConstraintRef(model, index)
 end
 
+# Add a constraint to the SPModel
+function JuMP.add_constraint(model::SPModel, constr::GPScalarConstraint, name::String = "")
+
+    jump_constr = constr.scalar_constraint
+
+    # Check that all variables in the constraint belong to this model
+    vars = constraint_variables(jump_constr)
+    for var in vars
+        if !(var.model === model)
+            error("Variable in constraint does not belong to the model")
+        end
+    end
+
+    # Check if the constraint is a valid SP constraint
+    is_valid = is_valid_sp_constraint(jump_constr)
+    if !is_valid
+        error("Constraint is not a valid signomial programming constraint")
+    end
+
+    # Determine if it's an equality or inequality constraint
+    set = JuMP.moi_set(jump_constr)
+    is_equality = set isa MOI.EqualTo
+
+    # Create the constraint data
+    constr_data = SPConstraintData(
+        jump_constr,
+        name,
+        is_equality,
+        is_valid,
+        constr.negate_dual,
+        constr.is_signomial_constraint,
+    )
+
+    # Add the constraint to the model's constraints list
+    push!(model.constraints, constr_data)
+    index = length(model.constraints)
+
+    # Return a constraint reference
+    return SPConstraintRef(model, index)
+end
+
 # Helper functions to analyze SignomialExpressions for constraint validation
 
 # Check if a SignomialExpression represents a valid GP equality constraint in normalized form
 # This is the case when the expression is of the form m1 - m2 == 0, where m1 and m2 are monomials
-function is_normalized_monomial_constraint(expr::SignomialExpression)
+function split_lhs_rhs(expr::SignomialExpression)
     # We need exactly one positive term and one negative term
     pos_terms = [t for t in expr.terms if t.coefficient > 0]
     neg_terms = [t for t in expr.terms if t.coefficient < 0]
 
-    if length(pos_terms) != 1 || length(neg_terms) != 1
-        return false, nothing, nothing
+    # type unstable, but we're ok with that
+    p_lhs = 0.0
+    p_rhs = 0.0
+
+    if length(pos_terms) == 0
+        p_lhs = 0.0
+    elseif length(pos_terms) == 1
+        p_lhs = MonomialExpression(pos_terms[1])
+    else
+        p_lhs = PosynomialExpression(pos_terms)
+    end
+    if length(neg_terms) == 0
+        p_rhs = 0.0
+    elseif length(neg_terms) == 1
+        neg_term = neg_terms[1]
+        p_rhs = MonomialExpression(MonomialTerm(-neg_term.coefficient, neg_term.exponents))
+    else
+        p_rhs = PosynomialExpression([
+            MonomialTerm(-t.coefficient, t.exponents) for t in neg_terms
+        ])
     end
 
-    # Extract the positive and negative terms
-    pos_term = pos_terms[1]
-    neg_term = neg_terms[1]
-
-    # Create monomial expressions from these terms
-    lhs = MonomialExpression(pos_term)
-    rhs = MonomialExpression(MonomialTerm(-neg_term.coefficient, neg_term.exponents))
-
-    # Check that both are valid monomials
-    return true, lhs, rhs
-end
-
-# Check if a SignomialExpression represents a valid GP inequality constraint in normalized form
-# This is the case when the expression is of the form p - m <= 0, where p is a posynomial and m is a monomial
-function is_normalized_posynomial_inequality(expr::SignomialExpression)
-    # Get all positive and negative terms
-    pos_terms = [t for t in expr.terms if t.coefficient > 0]
-    neg_terms = [t for t in expr.terms if t.coefficient < 0]
-
-    # For a valid posynomial inequality, we need at least one positive term
-    # And exactly one negative term (representing the right side monomial)
-    if length(neg_terms) != 1
-        return false, nothing, nothing
-    end
-
-    # The negative term should be a monomial (the right side of the inequality)
-    neg_term = neg_terms[1]
-
-    # Create the right-hand side monomial
-    rhs = MonomialExpression(MonomialTerm(-neg_term.coefficient, neg_term.exponents))
-
-    # Create the left-hand side posynomial
-    lhs =
-        length(pos_terms) == 1 ? MonomialExpression(pos_terms[1]) :
-        PosynomialExpression(pos_terms)
-
-    return true, lhs, rhs
+    return p_lhs, p_rhs
 end
 
 # Build a constraint for the GPModel
 function JuMP.build_constraint(
     _error::Function,
-    func::AbstractGPExpression,
+    func::AbstractGPSPExpression,
     set::Union{MOI.EqualTo,MOI.LessThan,MOI.GreaterThan},
 )
     # Special case handling for SignomialExpressions, which may represent valid GP constraints
@@ -186,85 +247,74 @@ function JuMP.build_constraint(
     if func isa SignomialExpression
         if set isa MOI.EqualTo
             # Check if this represents a valid monomial == monomial constraint
-            is_valid, lhs, rhs = is_normalized_monomial_constraint(func)
-            if is_valid
+            lhs, rhs = split_lhs_rhs(func)
+            if is_monomial(lhs) && is_monomial(rhs) && !iszero(rhs)
                 # Convert to the standard form lhs/rhs == 1 for GP
                 return GPScalarConstraint(
                     JuMP.ScalarConstraint(lhs / rhs, MOI.EqualTo(1.0)),
                 )
             else
                 _error(
-                    "Equality constraints in geometric programming must involve monomials on both sides",
+                    "Equality constraints in geometric and signomial programming must involve monomials on both sides",
                 )
             end
         elseif set isa MOI.GreaterThan
             # Check if this represents a valid monomial > monomial constraint
-            is_valid, lhs, rhs = is_normalized_monomial_constraint(func)
-            if is_valid
+            lhs, rhs = split_lhs_rhs(func)
+            if is_monomial(lhs) && is_monomial(rhs) && !iszero(rhs)
                 # Convert to the standard form rhs/lhs < 1 for GP
                 return GPScalarConstraint(
                     JuMP.ScalarConstraint(rhs / lhs, MOI.LessThan(1.0)),
                     negate_dual = true,
                 )
             else
-                _error(
-                    "Inequality constraints in geometric programming must involve monomials on both sides",
+                return GPScalarConstraint(
+                    JuMP.ScalarConstraint(rhs - lhs, MOI.LessThan(0.0)),
+                    negate_dual = true,
+                    is_signomial_constraint = true,
                 )
             end
         elseif set isa MOI.LessThan
             # Check if this represents a valid posynomial <= monomial constraint
-            is_valid, lhs, rhs = is_normalized_posynomial_inequality(func)
-            if is_valid
+            lhs, rhs = split_lhs_rhs(func)
+            if is_posynomial(lhs) && is_monomial(rhs) && !iszero(rhs)
                 # Convert to the standard form lhs/rhs <= 1 for GP
                 return GPScalarConstraint(
                     JuMP.ScalarConstraint(lhs / rhs, MOI.LessThan(1.0)),
                 )
             else
-                _error(
-                    "Inequality constraints in geometric programming must have posynomial LHS and monomial RHS",
+                return GPScalarConstraint(
+                    JuMP.ScalarConstraint(lhs - rhs, MOI.LessThan(0.0)),
+                    is_signomial_constraint = true,
                 )
             end
         end
     else
         # For equality constraints (==) with value, we require monomials
         if set isa MOI.EqualTo
-            if !is_monomial(func)
-                _error(
-                    "Equality constraints in geometric programming must involve monomials",
-                )
-            end
-            # Special case: if we're comparing to zero, that's invalid in GP (log(0) = -∞)
-            if set.value == 0
-                _error(
-                    "Equality constraints cannot have zero on the right side in geometric programming",
-                )
-            end
-            # For inequality constraints (<=) with value, we require posynomials
+            # This is invalid for both GP and SP
+            _error("Equality constraints in geometric programming must involve monomials")
         elseif set isa MOI.LessThan
-            if !is_posynomial(func)
-                _error(
-                    "Inequality constraints in geometric programming must be posynomials",
-                )
-            end
-            # Special case: if we're comparing to zero, that's invalid in GP (log(0) = -∞)
-            if set.value == 0
-                _error(
-                    "Inequality constraints cannot have zero on the right side in geometric programming",
-                )
-            end
+            return GPScalarConstraint(
+                JuMP.ScalarConstraint(func, set),
+                is_signomial_constraint = true,
+            )
+        elseif set isa MOI.GreaterThan
+            return GPScalarConstraint(
+                JuMP.ScalarConstraint(func, set),
+                is_signomial_constraint = true,
+            )
         end
 
-        # If we're not comparing to 0, create the constraint
-        return GPScalarConstraint(JuMP.ScalarConstraint(func, set))
     end
 end
 
 # Handle expressions with variables on both sides by moving all terms to one side
 function JuMP.build_constraint(
     _error::Function,
-    lhs::AbstractGPExpression,
+    lhs::AbstractGPSPExpression,
     set::MOI.EqualTo{Float64},
-    rhs::AbstractGPExpression,
+    rhs::AbstractGPSPExpression,
 )
     # For equality constraints, check if both sides are monomials
     if !is_monomial(lhs) || !is_monomial(rhs)
@@ -284,9 +334,9 @@ end
 # Handle inequality constraints with expressions on both sides
 function JuMP.build_constraint(
     _error::Function,
-    lhs::AbstractGPExpression,
+    lhs::AbstractGPSPExpression,
     set::MOI.LessThan{Float64},
-    rhs::AbstractGPExpression,
+    rhs::AbstractGPSPExpression,
 )
     # For inequality constraints in GP, the LHS must be a posynomial or monomial,
     # and the RHS must be a monomial
@@ -326,20 +376,20 @@ function JuMP.build_constraint(
 end
 
 # Constraint name accessor
-function JuMP.name(cref::GPConstraintRef)
+function JuMP.name(cref::ConstraintRef)
     # Get the constraint data
     constr_data = cref.model.constraints[cref.index]
     return constr_data.name
 end
 
 # Check if a constraint is valid
-function JuMP.is_valid(model::GPModel, cref::GPConstraintRef)
+function JuMP.is_valid(model::AbstractSpGpModel, cref::ConstraintRef)
     # Check if the constraint reference matches the model and index is valid
     return (cref.model === model && 1 <= cref.index <= length(model.constraints))
 end
 
 # Get the constraint function
-function JuMP.constraint_object(cref::GPConstraintRef)
+function JuMP.constraint_object(cref::ConstraintRef)
     # Return the JuMP constraint object
     return cref.model.constraints[cref.index].constraint
 end
@@ -359,23 +409,23 @@ Returns the dual value (sensitivity) of the constraint.
 # Throws
 - Error if the model has not been solved yet or if dual values are not available
 """
-function JuMP.dual(cref::GPConstraintRef)
+function JuMP.dual(cref::ConstraintRef)
     model = cref.model
 
     # Check if the model has been solved
-    if isnothing(model.termination_status)
+    if isnothing(model.solution_info.termination_status)
         error("Model has not been solved yet")
     end
 
     # Check if dual values are available
-    if isnothing(model.constraint_duals)
+    if isnothing(model.solution_info.constraint_duals)
         error("Dual values not available. Make sure the solver supports dual values.")
     end
 
     # Get the dual value for this constraint
-    if haskey(model.constraint_duals, cref.index)
+    if haskey(model.solution_info.constraint_duals, cref.index)
         multiplier = cref.model.constraints[cref.index].negate_dual ? -1.0 : 1.0
-        return model.constraint_duals[cref.index] * multiplier
+        return model.solution_info.constraint_duals[cref.index] * multiplier
     else
         error("Dual value not available for this constraint")
     end
