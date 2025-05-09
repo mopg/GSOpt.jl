@@ -91,4 +91,3 @@ end
     @test constr11 isa GSOpt.SPConstraintRef
     @test is_valid(model, constr11)
 end
-

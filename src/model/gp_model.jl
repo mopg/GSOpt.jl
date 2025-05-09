@@ -173,10 +173,13 @@ function JuMP.solution_summary(model::GPModel; result::Int = 1, verbose::Bool = 
     term_status = termination_status(model)
 
     # Get the objective value if available
-    obj_value = isnothing(model.objective_value) ? nothing : model.objective_value
+    obj_value =
+        isnothing(model.solution_info.objective_value) ? nothing :
+        model.solution_info.objective_value
 
     # Get the solve time if available
-    solve_time = isnothing(model.solve_time) ? nothing : model.solve_time
+    solve_time =
+        isnothing(model.solution_info.solve_time) ? nothing : model.solution_info.solve_time
 
     # Count variables and constraints
     var_count = num_variables(model)
@@ -254,4 +257,3 @@ function Base.show(io::IO, summary::_GPSolutionSummary)
         end
     end
 end
-
