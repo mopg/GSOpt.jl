@@ -1,5 +1,7 @@
 # GSOpt.jl - Geometric & Signomial Optimization/Programming using JuMP
 
+[![Documentation](https://img.shields.io/badge/docs-%F0%9F%93%9A-blue)](https://mopg.github.io/GSOpt.jl/stable)
+
 ## Overview
 
 GSOpt.jl is a Julia package that extends JuMP to solve geometric programming (GP) and signomial programming (SP) problems.

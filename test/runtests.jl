@@ -1,5 +1,6 @@
 using GSOpt
 using Test
+using Documenter
 
 @testset "GSOpt.jl" begin
     # Include all test files
@@ -15,7 +16,6 @@ using Test
         include("test_constraints.jl")
     end
 
-
     # Include transformation tests
     @testset "Transformation Tests" begin
         include("test_transformations.jl")
@@ -29,5 +29,9 @@ using Test
     # Include display tests
     @testset "Display Tests" begin
         include("test_display.jl")
+    end
+
+    @testset "Documentation Tests" begin
+        doctest(GSOpt)
     end
 end

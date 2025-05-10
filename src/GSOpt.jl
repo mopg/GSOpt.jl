@@ -7,6 +7,7 @@ Reexport.@reexport using JuMP
 # Import necessary packages
 import MathOptInterface
 import JuMP
+using LinearAlgebra: norm
 
 # Aliases for convenience
 const MOI = MathOptInterface
@@ -18,7 +19,10 @@ include("types/abstract_types.jl")
 include("model/constraint_types.jl")
 
 # Include the model core components
+include("model/model.jl")
 include("model/gp_model.jl")
+include("model/sp_model.jl")
+include("model/jump_model_helpers.jl")
 include("model/variables.jl")
 
 # Include expressions after variables because expressions use variables
@@ -34,9 +38,6 @@ include("model/constraints.jl")
 include("model/transformations.jl")
 
 # Export main types and functions
-export GPModel, GPVariable, GPConstraintRef
-export AbstractGPExpression,
-    MonomialTerm, MonomialExpression, PosynomialExpression, SignomialExpression
-export is_monomial, is_posynomial
+export GPModel, SPModel
 
 end # module

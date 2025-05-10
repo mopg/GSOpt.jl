@@ -75,6 +75,29 @@ optimize!(model)
 solution_summary(model, verbose=true)
 ```
 
+## Signomial Program
+
+```@example
+using GSOpt
+using SCS
+
+model = SPModel(optimizer = SCS.Optimizer)
+JuMP.set_silent(model)
+
+@variable(model, x ≥ 0.1)
+@variable(model, y ≥ 0.1)
+@variable(model, z ≥ 0.1)
+
+@objective(model, Max, 2 * x) # maximize monomial
+
+@constraint(model, x * y * z == 10)  # monomial equality constraint
+@constraint(model, 2x + 3y - 4z ≤ 1.0)  # signomial inequality constraint
+
+optimize!(model)
+
+solution_summary(model, verbose=true)
+```
+
 ## Engineering Example: Cantilever Beam Design
 
 This example optimizes the design of a cantilever beam to minimize its weight while satisfying constraints on deflection and stress.

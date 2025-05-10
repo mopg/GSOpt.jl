@@ -12,7 +12,7 @@ Operations supported:
 
 
 # Convert a GPVariable to a MonomialExpression
-function as_monomial(v::GPVariable)
+function as_monomial(v::AbstractSPGPVariable)
     return MonomialExpression(1.0, Dict(v => 1.0))
 end
 
@@ -29,32 +29,35 @@ end
 #
 
 # Variable * Variable
-function Base.:*(x::GPVariable, y::GPVariable)::MonomialExpression
+function Base.:*(x::T, y::T)::MonomialExpression where {T<:AbstractSPGPVariable}
     return MonomialExpression(1.0, Dict(x => 1.0, y => 1.0))
 end
 
 # Constant * Variable
-function Base.:*(c::Real, x::GPVariable)::Union{MonomialExpression,JuMP.NonlinearExpression}
+function Base.:*(
+    c::Real,
+    x::T,
+)::Union{MonomialExpression{T},SignomialExpression{T}} where {T<:AbstractSPGPVariable}
     if c > 0
         return MonomialExpression(c, Dict(x => 1.0))
     else
-        # If the coefficient is negative, create a SignomialExpression
-        # But since we don't want to return a SignomialExpression for * operation,
-        # we fall back to JuMP's NonlinearExpression
-        return JuMP.@NLexpression(x.model, c * x)
+        return SignomialExpression([MonomialTerm(c, Dict(x => 1.0))])
     end
 end
 
 # Variable * Constant
-Base.:*(x::GPVariable, c::Real) = c * x
+Base.:*(x::AbstractSPGPVariable, c::Real) = c * x
 
 # Monomial * Monomial
-function Base.:*(x::MonomialExpression, y::MonomialExpression)::MonomialExpression
+function Base.:*(
+    x::MonomialExpression{T},
+    y::MonomialExpression{T},
+)::MonomialExpression where {T<:AbstractSPGPVariable}
     # Combine coefficients
     coef = x.term.coefficient * y.term.coefficient
 
     # Combine exponents
-    exponents = Dict{GPVariable,Float64}()
+    exponents = Dict{T,Float64}()
 
     # Add exponents from x
     for (var, exp) in x.term.exponents
@@ -70,12 +73,12 @@ function Base.:*(x::MonomialExpression, y::MonomialExpression)::MonomialExpressi
 end
 
 # Monomial * Variable
-function Base.:*(x::MonomialExpression, y::GPVariable)::MonomialExpression
+function Base.:*(x::MonomialExpression, y::AbstractSPGPVariable)::MonomialExpression
     return x * as_monomial(y)
 end
 
 # Variable * Monomial
-Base.:*(x::GPVariable, y::MonomialExpression) = y * x
+Base.:*(x::AbstractSPGPVariable, y::MonomialExpression) = y * x
 
 # Monomial * Constant
 function Base.:*(
@@ -110,12 +113,12 @@ end
 Base.:*(m::MonomialExpression, p::PosynomialExpression) = p * m
 
 # Variable * Posynomial
-function Base.:*(v::GPVariable, p::PosynomialExpression)::PosynomialExpression
+function Base.:*(v::AbstractSPGPVariable, p::PosynomialExpression)::PosynomialExpression
     return as_monomial(v) * p
 end
 
 # Posynomial * Variable
-Base.:*(p::PosynomialExpression, v::GPVariable) = v * p
+Base.:*(p::PosynomialExpression, v::AbstractSPGPVariable) = v * p
 
 # Posynomial * Constant
 function Base.:*(p::PosynomialExpression, c::Real)::PosynomialExpression
@@ -128,31 +131,48 @@ end
 # Constant * Posynomial
 Base.:*(c::Real, p::PosynomialExpression)::PosynomialExpression = p * c
 
-# Signomial operations generally fall back to JuMP.NonlinearExpression
-# Signomial * Anything
-function Base.:*(
-    s::SignomialExpression,
-    x::Union{GPVariable,MonomialExpression,PosynomialExpression,Real},
-)
-    # Fall back to JuMP's NonlinearExpression
-    m = first(s.terms).exponents |> keys |> first |> owner_model
-    return JuMP.@NLexpression(m, s * x)
+# Signomial * Real
+function Base.:*(s::SignomialExpression, x::Real)
+    return SignomialExpression([
+        MonomialTerm(s.terms[kk].coefficient * x, copy(s.terms[kk].exponents)) for
+        kk = 1:length(s.terms)
+    ])
 end
 
+# Signomial * SPVariable
+function Base.:*(s::SignomialExpression, v::SPVariable)
+    return s * as_monomial(v)
+end
+
+# Signomial * Monomial
+function Base.:*(s::SignomialExpression, m::MonomialExpression)::SignomialExpression
+
+    new_terms = [
+        MonomialTerm(
+            term.coefficient * m.term.coefficient,
+            merge(+, copy(term.exponents), m.term.exponents),
+        ) for term in s.terms
+    ]
+
+    return SignomialExpression(new_terms)
+
+end
+
+
 # Anything * Signomial
-Base.:*(
-    x::Union{GPVariable,MonomialExpression,PosynomialExpression,Real},
-    s::SignomialExpression,
-) = s * x
+Base.:*(x::Union{SPVariable,MonomialExpression,Real}, s::SignomialExpression) = s * x
 
 # All operations with nonlinear expressions are not supported
-function Base.:*(x::GenericNonlinearExpr{GPVariable}, gp_expr::AbstractGPExpression)
+function Base.:*(
+    x::GenericNonlinearExpr{<:AbstractSPGPVariable},
+    gp_expr::AbstractGPSPExpression,
+)
     error(
         "Operations between nonlinear expressions and geometric programming expressions are not supported in the GP framework.",
     )
 end
 
-Base.:*(gp_expr::AbstractGPExpression, x::GenericNonlinearExpr{GPVariable}) =
+Base.:*(gp_expr::AbstractGPSPExpression, x::GenericNonlinearExpr{<:AbstractSPGPVariable}) =
     Base.:*(x, gp_expr)
 
 #
@@ -160,42 +180,53 @@ Base.:*(gp_expr::AbstractGPExpression, x::GenericNonlinearExpr{GPVariable}) =
 #
 
 # Variable / Variable
-function Base.:/(x::GPVariable, y::GPVariable)::MonomialExpression
+function Base.:/(x::AbstractSPGPVariable, y::AbstractSPGPVariable)::MonomialExpression
     return MonomialExpression(1.0, Dict(x => 1.0, y => -1.0))
 end
 
 # Variable / Constant
-function Base.:/(x::GPVariable, c::Real)::MonomialExpression
+function Base.:/(
+    x::AbstractSPGPVariable,
+    c::Real,
+)::Union{MonomialExpression,SignomialExpression}
     if c <= 0
-        error("Cannot divide by a non-positive constant in a geometric program")
+        return SignomialExpression([MonomialTerm(1.0 / c, Dict(x => 1.0))])
     end
     return MonomialExpression(1.0 / c, Dict(x => 1.0))
 end
 
 # All division operations with nonlinear expressions are not supported
-Base.:/(x::GenericNonlinearExpr{GPVariable}, gp_expr::AbstractGPExpression) = error(
-    "Operations between nonlinear expressions and geometric programming expressions are not supported in the GP framework.",
-)
+Base.:/(x::GenericNonlinearExpr{<:AbstractSPGPVariable}, gp_expr::AbstractGPSPExpression) =
+    error(
+        "Operations between nonlinear expressions and geometric programming expressions are not supported in the GP framework.",
+    )
 
-Base.:/(gp_expr::AbstractGPExpression, x::GenericNonlinearExpr{GPVariable}) = error(
-    "Operations between nonlinear expressions and geometric programming expressions are not supported in the GP framework.",
-)
+Base.:/(gp_expr::AbstractGPSPExpression, x::GenericNonlinearExpr{<:AbstractSPGPVariable}) =
+    error(
+        "Operations between nonlinear expressions and geometric programming expressions are not supported in the GP framework.",
+    )
 
 # Constant / Variable
-function Base.:/(c::Real, x::GPVariable)::MonomialExpression
+function Base.:/(
+    c::Real,
+    x::AbstractSPGPVariable,
+)::Union{MonomialExpression,SignomialExpression}
     if c <= 0
-        error("Cannot have a non-positive constant in the numerator in a geometric program")
+        return SignomialExpression([MonomialTerm(1.0 / c, Dict(x => -1.0))])
     end
     return MonomialExpression(c, Dict(x => -1.0))
 end
 
 # Monomial / Monomial
-function Base.:/(x::MonomialExpression, y::MonomialExpression)::MonomialExpression
+function Base.:/(
+    x::MonomialExpression{T},
+    y::MonomialExpression{T},
+)::MonomialExpression{T} where {T<:AbstractSPGPVariable}
     # Combine coefficients
     coef = x.term.coefficient / y.term.coefficient
 
     # Combine exponents
-    exponents = Dict{GPVariable,Float64}()
+    exponents = Dict{T,Float64}()
 
     # Add exponents from x
     for (var, exp) in x.term.exponents
@@ -211,7 +242,7 @@ function Base.:/(x::MonomialExpression, y::MonomialExpression)::MonomialExpressi
 end
 
 # Monomial / Variable
-function Base.:/(x::MonomialExpression, y::GPVariable)::MonomialExpression
+function Base.:/(x::MonomialExpression, y::AbstractSPGPVariable)::MonomialExpression
     # Create a new exponents dictionary
     exponents = copy(x.term.exponents)
     exponents[y] = get(exponents, y, 0.0) - 1.0
@@ -220,7 +251,7 @@ function Base.:/(x::MonomialExpression, y::GPVariable)::MonomialExpression
 end
 
 # Variable / Monomial
-function Base.:/(x::GPVariable, y::MonomialExpression)::MonomialExpression
+function Base.:/(x::AbstractSPGPVariable, y::MonomialExpression)::MonomialExpression
     # Convert variable to monomial and then divide
     return as_monomial(x) / y
 end
@@ -245,9 +276,12 @@ function Base.:/(x::PosynomialExpression, c::Real)::PosynomialExpression
 end
 
 # Posynomial / Variable
-function Base.:/(x::PosynomialExpression, v::GPVariable)::PosynomialExpression
+function Base.:/(
+    x::PosynomialExpression{T},
+    v::T,
+)::PosynomialExpression where {T<:AbstractSPGPVariable}
     # For each term in the posynomial, subtract 1 from the exponent of the variable
-    new_terms = Vector{MonomialTerm}()
+    new_terms = Vector{MonomialTerm{T}}()
 
     for term in x.terms
         # Create a new copy of the exponents
@@ -262,9 +296,12 @@ function Base.:/(x::PosynomialExpression, v::GPVariable)::PosynomialExpression
 end
 
 # Posynomial / Monomial
-function Base.:/(x::PosynomialExpression, y::MonomialExpression)::PosynomialExpression
+function Base.:/(
+    x::PosynomialExpression{T},
+    y::MonomialExpression{T},
+)::PosynomialExpression where {T<:AbstractSPGPVariable}
     # For each term in the posynomial, divide by the monomial
-    new_terms = Vector{MonomialTerm}()
+    new_terms = Vector{MonomialTerm{T}}()
 
     for term in x.terms
         # Create a new monomial term with coefficient divided by y's coefficient
@@ -285,13 +322,16 @@ function Base.:/(x::PosynomialExpression, y::MonomialExpression)::PosynomialExpr
 end
 
 # Constant / Monomial
-function Base.:/(c::Real, x::MonomialExpression)::MonomialExpression
+function Base.:/(
+    c::Real,
+    x::MonomialExpression{T},
+)::Union{MonomialExpression{T},SignomialExpression{T}} where {T<:AbstractSPGPVariable}
     if c <= 0
-        error("Cannot have a non-positive constant in the numerator in a geometric program")
+        return SignomialExpression([MonomialTerm(1.0 / c, Dict(x => -1.0))])
     end
 
     # Create a new exponents dictionary with negated exponents
-    exponents = Dict{GPVariable,Float64}()
+    exponents = Dict{T,Float64}()
     for (var, exp) in x.term.exponents
         exponents[var] = -exp
     end
@@ -308,33 +348,35 @@ end
 #
 
 # Variable ^ Constant
-function Base.:^(x::GPVariable, p::Real)::MonomialExpression
+function Base.:^(x::AbstractSPGPVariable, p::Real)::MonomialExpression
     return MonomialExpression(1.0, Dict(x => Float64(p)))
 end
 
-# Variable ^ Integer -- overrides JuMP's method
-# We need to define this directly for GPVariable to ensure it takes precedence over JuMP's method
-function Base.:^(x::GPVariable, p::Integer)::MonomialExpression
+# Variable ^ Integer
+function Base.:^(x::AbstractSPGPVariable, p::Integer)::MonomialExpression
     return MonomialExpression(1.0, Dict(x => Float64(p)))
 end
 
 # inv(Variable) - returns x^(-1)
-function Base.inv(x::GPVariable)::MonomialExpression
+function Base.inv(x::AbstractSPGPVariable)::MonomialExpression
     return MonomialExpression(1.0, Dict(x => -1.0))
 end
 
 # sqrt(Variable) - returns x^(0.5)
-function Base.sqrt(x::GPVariable)::MonomialExpression
+function Base.sqrt(x::AbstractSPGPVariable)::MonomialExpression
     return MonomialExpression(1.0, Dict(x => 0.5))
 end
 
 # Monomial ^ Constant
-function Base.:^(x::MonomialExpression, p::Real)::MonomialExpression
+function Base.:^(
+    x::MonomialExpression{T},
+    p::Real,
+)::MonomialExpression where {T<:AbstractSPGPVariable}
     # Apply power to coefficient
     coef = x.term.coefficient^p
 
     # Apply power to all exponents
-    exponents = Dict{GPVariable,Float64}()
+    exponents = Dict{T,Float64}()
     for (var, exp) in x.term.exponents
         exponents[var] = exp * p
     end
@@ -343,12 +385,14 @@ function Base.:^(x::MonomialExpression, p::Real)::MonomialExpression
 end
 
 # inv(Monomial) - returns 1/x which is x^(-1)
-function Base.inv(x::MonomialExpression)::MonomialExpression
+function Base.inv(
+    x::MonomialExpression{T},
+)::MonomialExpression where {T<:AbstractSPGPVariable}
     # Invert the coefficient
     coef = 1.0 / x.term.coefficient
 
     # Negate all exponents
-    exponents = Dict{GPVariable,Float64}()
+    exponents = Dict{T,Float64}()
     for (var, exp) in x.term.exponents
         exponents[var] = -exp
     end
@@ -357,12 +401,14 @@ function Base.inv(x::MonomialExpression)::MonomialExpression
 end
 
 # sqrt(Monomial) - returns x^(0.5)
-function Base.sqrt(x::MonomialExpression)::MonomialExpression
+function Base.sqrt(
+    x::MonomialExpression{T},
+)::MonomialExpression where {T<:AbstractSPGPVariable}
     # Take square root of coefficient
     coef = sqrt(x.term.coefficient)
 
     # Multiply all exponents by 0.5
-    exponents = Dict{GPVariable,Float64}()
+    exponents = Dict{T,Float64}()
     for (var, exp) in x.term.exponents
         exponents[var] = exp * 0.5
     end
@@ -384,7 +430,7 @@ end
 #
 
 # Variable + Variable
-function Base.:+(x::GPVariable, y::GPVariable)::PosynomialExpression
+function Base.:+(x::AbstractSPGPVariable, y::AbstractSPGPVariable)::PosynomialExpression
     return PosynomialExpression([
         MonomialTerm(1.0, Dict(x => 1.0)),
         MonomialTerm(1.0, Dict(y => 1.0)),
@@ -393,13 +439,13 @@ end
 
 # Variable + Constant
 function Base.:+(
-    x::GPVariable,
+    x::T,
     c::Real,
-)::Union{PosynomialExpression,JuMP.NonlinearExpression,SignomialExpression}
+)::Union{PosynomialExpression{T},SignomialExpression{T}} where {T<:AbstractSPGPVariable}
     if c > 0
         return PosynomialExpression([
             MonomialTerm(1.0, Dict(x => 1.0)),
-            MonomialTerm(c, Dict{GPVariable,Float64}()),
+            MonomialTerm(c, Dict{T,Float64}()),
         ])
     elseif c == 0
         return PosynomialExpression([MonomialTerm(1.0, Dict(x => 1.0))])
@@ -407,13 +453,13 @@ function Base.:+(
         # For negative constants, we need to create a SignomialExpression
         return SignomialExpression([
             MonomialTerm(1.0, Dict(x => 1.0)),
-            MonomialTerm(c, Dict{GPVariable,Float64}()),
+            MonomialTerm(c, Dict{T,Float64}()),
         ])
     end
 end
 
 # Constant + Variable
-Base.:+(c::Real, x::GPVariable) = x + c
+Base.:+(c::Real, x::AbstractSPGPVariable) = x + c
 
 # Monomial + Monomial
 function Base.:+(x::MonomialExpression, y::MonomialExpression)::PosynomialExpression
@@ -421,25 +467,25 @@ function Base.:+(x::MonomialExpression, y::MonomialExpression)::PosynomialExpres
 end
 
 # Monomial + Variable
-function Base.:+(x::MonomialExpression, y::GPVariable)::PosynomialExpression
+function Base.:+(x::MonomialExpression, y::AbstractSPGPVariable)::PosynomialExpression
     return PosynomialExpression([x.term, MonomialTerm(1.0, Dict(y => 1.0))])
 end
 
 # Variable + Monomial
-Base.:+(x::GPVariable, y::MonomialExpression) = y + x
+Base.:+(x::AbstractSPGPVariable, y::MonomialExpression) = y + x
 
 # Monomial + Constant
 function Base.:+(
-    x::MonomialExpression,
+    x::MonomialExpression{T},
     c::Real,
-)::Union{PosynomialExpression,SignomialExpression}
+)::Union{PosynomialExpression{T},SignomialExpression{T}} where {T<:AbstractSPGPVariable}
     if c > 0
-        return PosynomialExpression([x.term, MonomialTerm(c, Dict{GPVariable,Float64}())])
+        return PosynomialExpression([x.term, MonomialTerm(c, Dict{T,Float64}())])
     elseif c == 0
         return PosynomialExpression([x.term])
     else
         # For negative constants, we need to create a SignomialExpression
-        return SignomialExpression([x.term, MonomialTerm(c, Dict{GPVariable,Float64}())])
+        return SignomialExpression([x.term, MonomialTerm(c, Dict{T,Float64}())])
     end
 end
 
@@ -462,30 +508,26 @@ end
 Base.:+(x::MonomialExpression, y::PosynomialExpression) = y + x
 
 # Posynomial + Variable
-function Base.:+(x::PosynomialExpression, y::GPVariable)::PosynomialExpression
+function Base.:+(x::PosynomialExpression, y::AbstractSPGPVariable)::PosynomialExpression
     # Add variable term to posynomial terms
     return PosynomialExpression(vcat(x.terms, [MonomialTerm(1.0, Dict(y => 1.0))]))
 end
 
 # Variable + Posynomial
-Base.:+(x::GPVariable, y::PosynomialExpression) = y + x
+Base.:+(x::AbstractSPGPVariable, y::PosynomialExpression) = y + x
 
 # Posynomial + Constant
 function Base.:+(
-    x::PosynomialExpression,
+    x::PosynomialExpression{T},
     c::Real,
-)::Union{PosynomialExpression,SignomialExpression}
+)::Union{PosynomialExpression{T},SignomialExpression{T}} where {T<:AbstractSPGPVariable}
     if c > 0
-        return PosynomialExpression(
-            vcat(x.terms, [MonomialTerm(c, Dict{GPVariable,Float64}())]),
-        )
+        return PosynomialExpression(vcat(x.terms, [MonomialTerm(c, Dict{T,Float64}())]))
     elseif c == 0
         return x
     else
         # For negative constants, we need to create a SignomialExpression
-        return SignomialExpression(
-            vcat(x.terms, [MonomialTerm(c, Dict{GPVariable,Float64}())]),
-        )
+        return SignomialExpression(vcat(x.terms, [MonomialTerm(c, Dict{T,Float64}())]))
     end
 end
 
@@ -500,25 +542,23 @@ end
 
 # Signomial + Posynomial/Monomial/Variable/Constant
 function Base.:+(
-    x::SignomialExpression,
-    y::Union{PosynomialExpression,MonomialExpression,GPVariable,Real},
-)
+    x::SignomialExpression{T},
+    y::Union{PosynomialExpression,MonomialExpression,T,Real},
+) where {T<:AbstractSPGPVariable}
     if y isa PosynomialExpression
         return SignomialExpression(vcat(x.terms, y.terms))
     elseif y isa MonomialExpression
         return SignomialExpression(vcat(x.terms, [y.term]))
-    elseif y isa GPVariable
+    elseif y isa T
         return SignomialExpression(vcat(x.terms, [MonomialTerm(1.0, Dict(y => 1.0))]))
     elseif y isa Real
-        return SignomialExpression(
-            vcat(x.terms, [MonomialTerm(y, Dict{GPVariable,Float64}())]),
-        )
+        return SignomialExpression(vcat(x.terms, [MonomialTerm(y, Dict{T,Float64}())]))
     end
 end
 
 # Any + Signomial
 Base.:+(
-    y::Union{PosynomialExpression,MonomialExpression,GPVariable,Real},
+    y::Union{PosynomialExpression,MonomialExpression,GPVariable,SPVariable,Real},
     x::SignomialExpression,
 ) = x + y
 
@@ -527,7 +567,7 @@ Base.:+(
 #
 
 # Variable - Variable
-function Base.:-(x::GPVariable, y::GPVariable)::SignomialExpression
+function Base.:-(x::AbstractSPGPVariable, y::AbstractSPGPVariable)::SignomialExpression
     return SignomialExpression([
         MonomialTerm(1.0, Dict(x => 1.0)),
         MonomialTerm(-1.0, Dict(y => 1.0)),
@@ -535,12 +575,15 @@ function Base.:-(x::GPVariable, y::GPVariable)::SignomialExpression
 end
 
 # Variable - Constant
-function Base.:-(x::GPVariable, c::Real)::Union{PosynomialExpression,SignomialExpression}
+function Base.:-(
+    x::T,
+    c::Real,
+)::Union{PosynomialExpression{T},SignomialExpression{T}} where {T<:AbstractSPGPVariable}
     if c < 0
         # Subtracting a negative is like adding a positive
         return PosynomialExpression([
             MonomialTerm(1.0, Dict(x => 1.0)),
-            MonomialTerm(-c, Dict{GPVariable,Float64}()),
+            MonomialTerm(-c, Dict{T,Float64}()),
         ])
     elseif c == 0
         return PosynomialExpression([MonomialTerm(1.0, Dict(x => 1.0))])
@@ -548,15 +591,15 @@ function Base.:-(x::GPVariable, c::Real)::Union{PosynomialExpression,SignomialEx
         # Subtracting a positive constant gives a SignomialExpression
         return SignomialExpression([
             MonomialTerm(1.0, Dict(x => 1.0)),
-            MonomialTerm(-c, Dict{GPVariable,Float64}()),
+            MonomialTerm(-c, Dict{T,Float64}()),
         ])
     end
 end
 
 # Constant - Variable
-function Base.:-(c::Real, x::GPVariable)::SignomialExpression
+function Base.:-(c::Real, x::T)::SignomialExpression where {T<:AbstractSPGPVariable}
     return SignomialExpression([
-        MonomialTerm(c, Dict{GPVariable,Float64}()),
+        MonomialTerm(c, Dict{T,Float64}()),
         MonomialTerm(-1.0, Dict(x => 1.0)),
     ])
 end
@@ -566,9 +609,9 @@ end
 
 # Generic subtraction - create a SignomialExpression
 function Base.:-(
-    x::Union{MonomialExpression,PosynomialExpression},
-    y::Union{MonomialExpression,PosynomialExpression,GPVariable,Real},
-)::SignomialExpression
+    x::Union{MonomialExpression{T},PosynomialExpression{T}},
+    y::Union{MonomialExpression{T},PosynomialExpression{T},T,Real},
+)::SignomialExpression where {T<:AbstractSPGPVariable}
     # Convert to SignomialExpression
     x_terms = x isa MonomialExpression ? [x.term] : x.terms
 
@@ -578,39 +621,39 @@ function Base.:-(
         y_terms = [MonomialTerm(-y.term.coefficient, y.term.exponents)]
     elseif y isa PosynomialExpression
         y_terms = [MonomialTerm(-term.coefficient, term.exponents) for term in y.terms]
-    elseif y isa GPVariable
+    elseif y isa T
         y_terms = [MonomialTerm(-1.0, Dict(y => 1.0))]
     elseif y isa Real
-        y_terms = [MonomialTerm(-y, Dict{GPVariable,Float64}())]
+        y_terms = [MonomialTerm(-y, Dict{T,Float64}())]
     end
 
     return SignomialExpression(vcat(x_terms, y_terms))
 end
 
 # Handle remaining cases
-Base.:-(y::Union{GPVariable,Real}, x::Union{MonomialExpression,PosynomialExpression}) =
+Base.:-(
+    y::Union{T,Real},
+    x::Union{MonomialExpression{T},PosynomialExpression{T}},
+) where {T<:AbstractSPGPVariable} =
     SignomialExpression([
-        MonomialTerm(
-            y isa Real ? y : 1.0,
-            y isa Real ? Dict{GPVariable,Float64}() : Dict(y => 1.0),
-        ),
+        MonomialTerm(y isa Real ? y : 1.0, y isa Real ? Dict{T,Float64}() : Dict(y => 1.0)),
     ]) - x
 
 # Signomial - Any
 function Base.:-(
-    x::SignomialExpression,
-    y::Union{SignomialExpression,PosynomialExpression,MonomialExpression,GPVariable,Real},
-)
+    x::SignomialExpression{T},
+    y::Union{SignomialExpression{T},PosynomialExpression{T},MonomialExpression{T},T,Real},
+) where {T<:AbstractSPGPVariable}
     # Convert to SignomialExpression
     if y isa SignomialExpression
         y_terms = [MonomialTerm(-term.coefficient, term.exponents) for term in y.terms]
     elseif y isa PosynomialExpression || y isa MonomialExpression
         y_expr = SignomialExpression(y)
         y_terms = [MonomialTerm(-term.coefficient, term.exponents) for term in y_expr.terms]
-    elseif y isa GPVariable
+    elseif y isa T
         y_terms = [MonomialTerm(-1.0, Dict(y => 1.0))]
     elseif y isa Real
-        y_terms = [MonomialTerm(-y, Dict{GPVariable,Float64}())]
+        y_terms = [MonomialTerm(-y, Dict{T,Float64}())]
     end
 
     return SignomialExpression(vcat(x.terms, y_terms))
@@ -618,9 +661,9 @@ end
 
 # Any - Signomial
 function Base.:-(
-    y::Union{PosynomialExpression,MonomialExpression,GPVariable,Real},
+    y::Union{PosynomialExpression,MonomialExpression,T,Real},
     x::SignomialExpression,
-)
+) where {T<:AbstractSPGPVariable}
     # Convert y to SignomialExpression and then negate all terms of x
     y_expr =
         y isa SignomialExpression ? y :
@@ -628,9 +671,8 @@ function Base.:-(
             y isa PosynomialExpression || y isa MonomialExpression ?
             SignomialExpression(y) :
             (
-                y isa GPVariable ?
-                SignomialExpression([MonomialTerm(1.0, Dict(y => 1.0))]) :
-                SignomialExpression([MonomialTerm(y, Dict{GPVariable,Float64}())])
+                y isa T ? SignomialExpression([MonomialTerm(1.0, Dict(y => 1.0))]) :
+                SignomialExpression([MonomialTerm(y, Dict{T,Float64}())])
             )
         )
 
@@ -644,7 +686,7 @@ end
 #
 
 # -Variable
-function Base.:-(x::GPVariable)::SignomialExpression
+function Base.:-(x::AbstractSPGPVariable)::SignomialExpression
     return SignomialExpression([MonomialTerm(-1.0, Dict(x => 1.0))])
 end
 
@@ -701,7 +743,7 @@ Base.:(==)(x::SignomialExpression, y::SignomialExpression) =
 # These are critical for correctly building constraints in JuMP
 
 # For MonomialExpression
-function MA.add_mul(x::MonomialExpression, y::Real, z::GPVariable)
+function MA.add_mul(x::MonomialExpression, y::Real, z::AbstractSPGPVariable)
     if y <= 0
         error("Coefficients in geometric programming must be positive")
     end
@@ -711,11 +753,11 @@ function MA.add_mul(x::MonomialExpression, y::Real, z::GPVariable)
     return PosynomialExpression([x.term, new_term])
 end
 
-function MA.add_mul(x::MonomialExpression, y::GPVariable, z::Real)
+function MA.add_mul(x::MonomialExpression, y::AbstractSPGPVariable, z::Real)
     return MA.add_mul(x, z, y) # Reuse the implementation above
 end
 
-function MA.add_mul(x::MonomialExpression, y::GPVariable, z::GPVariable)
+function MA.add_mul(x::MonomialExpression, y::AbstractSPGPVariable, z::AbstractSPGPVariable)
     return MA.add_mul(x, 1.0, y * z)
 end
 
@@ -729,12 +771,17 @@ function MA.add_mul(x::MonomialExpression, y::Real, z::MonomialExpression)
     return PosynomialExpression([x.term, scaled_term])
 end
 
-function MA.add_mul(x::MonomialExpression, y::GPVariable, z::GPVariable, w::GPVariable)
+function MA.add_mul(
+    x::MonomialExpression,
+    y::AbstractSPGPVariable,
+    z::AbstractSPGPVariable,
+    w::AbstractSPGPVariable,
+)
     return MA.add_mul(x, 1.0, y * z * w)
 end
 
 # For PosynomialExpression
-function MA.add_mul(x::PosynomialExpression, y::Real, z::GPVariable)
+function MA.add_mul(x::PosynomialExpression, y::Real, z::AbstractSPGPVariable)
     if y <= 0
         error("Coefficients in geometric programming must be positive")
     end
@@ -744,7 +791,7 @@ function MA.add_mul(x::PosynomialExpression, y::Real, z::GPVariable)
     return PosynomialExpression([x.terms..., new_term])
 end
 
-function MA.add_mul(x::PosynomialExpression, y::GPVariable, z::Real)
+function MA.add_mul(x::PosynomialExpression, y::AbstractSPGPVariable, z::Real)
     return MA.add_mul(x, z, y) # Reuse the implementation above
 end
 
@@ -759,10 +806,10 @@ function MA.add_mul(x::PosynomialExpression, y::Real, z::MonomialExpression)
 end
 
 # Generic fallbacks
-function MA.add_mul(x::AbstractGPExpression, y::Real, z::AbstractGPExpression)
+function MA.add_mul(x::AbstractGPSPExpression, y::Real, z::AbstractGPSPExpression)
     return x + y * z
 end
 
-function MA.add_mul(x::AbstractGPExpression, y::AbstractGPExpression, z::Real)
+function MA.add_mul(x::AbstractGPSPExpression, y::AbstractGPSPExpression, z::Real)
     return x + y * z
 end

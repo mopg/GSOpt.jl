@@ -30,3 +30,17 @@ function Base.show(io::IO, cd::GPConstraintData)
     str = JuMP.constraint_string(MIME("text/plain"), cd.constraint)
     return print(io, str)
 end
+
+struct SPConstraintData
+    constraint::JuMP.AbstractConstraint
+    name::String
+    is_equality::Bool
+    is_valid_sp::Bool
+    negate_dual::Bool
+    is_signomial_constraint::Bool
+end
+
+function Base.show(io::IO, cd::SPConstraintData)
+    str = JuMP.constraint_string(MIME("text/plain"), cd.constraint)
+    return print(io, str)
+end
