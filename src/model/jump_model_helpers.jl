@@ -154,3 +154,57 @@ Returns a dictionary of named objects in the model.
 This is part of the JuMP interface for models.
 """
 JuMP.object_dictionary(model::AbstractSpGpModel) = Dict{Symbol,Any}()
+
+
+function JuMP.solution_summary(
+    model::AbstractSpGpModel;
+    result::Int = 1,
+    verbose::Bool = false,
+)
+    # Get the termination status
+    term_status = termination_status(model)
+
+    # Get the objective value if available
+    obj_value =
+        isnothing(model.solution_info.objective_value) ? nothing :
+        model.solution_info.objective_value
+
+    # Get the solve time if available
+    solve_time =
+        isnothing(model.solution_info.solve_time) ? nothing : model.solution_info.solve_time
+
+    # Count variables and constraints
+    var_count = num_variables(model)
+    con_count = num_constraints(model)
+
+    # Extract variable values if available
+    var_values = Dict{String,Float64}()
+    if !isnothing(model.solution_info.variable_values) &&
+       !isempty(model.solution_info.variable_values)
+        for var in model.variables
+            if haskey(model.solution_info.variable_values, JuMP.index(var))
+                var_values[JuMP.name(var)] =
+                    model.solution_info.variable_values[JuMP.index(var)]
+            end
+        end
+    end
+
+    # Extract constraint duals if available
+    constraint_duals = Dict{Int,Float64}()
+    if !isnothing(model.solution_info.constraint_duals) &&
+       !isempty(model.solution_info.constraint_duals)
+        constraint_duals = copy(model.solution_info.constraint_duals)
+    end
+
+    return _SolutionSummary(
+        model isa GPModel,
+        term_status,
+        obj_value,
+        solve_time,
+        var_count,
+        con_count,
+        var_values,
+        constraint_duals,
+        verbose,
+    )
+end

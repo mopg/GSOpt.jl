@@ -36,6 +36,22 @@ GSOpt.jl transforms the problem to log-space and solves it using a convex optimi
 
 For more information, see [A Tutorial on Geometric Programming](https://stanford.edu/~boyd/papers/pdf/gp_tutorial.pdf) by Boyd et al. (2007).
 
+## Signomial Programming
+
+For signomial programming, the same type of model is used, but some of the constraints can be signomials.
+
+```math
+\begin{align*}
+\text{min} & \quad f(x) \\
+\text{subject to} & \quad p_i(x) \leq q_i(x), \quad i = 1,\ldots,m \\
+& \quad g_j(x) = 1, \quad j = 1,\ldots,p
+\end{align*}
+```
+
+where each $f$ is a posynomial, and each $p_i$ and $q_i$ are posynomials, and each $g_j$ is a monomial.
+This optimization problem is no longer convex in log-space, meaning a global solution is no longer guaranteed.
+GSOpt.jl solves these types of problems iteratively, by solving a GP subproblem that is convex in log-space.
+
 ## Installation
 
 To use GSOpt.jl, you need to have Julia installed. Then, you can add GSOpt.jl to your project:
