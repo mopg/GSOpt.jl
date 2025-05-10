@@ -2,7 +2,7 @@ using GSOpt
 using Test
 using SCS
 
-@testset "Geometric Programming Optimization" begin
+@testset "Geometric Programming" begin
     @testset "Simple Minimization Problem" begin
         # Create a simple GP model
         model = GPModel(optimizer = SCS.Optimizer)
@@ -188,9 +188,13 @@ using SCS
         @test isapprox(Δvol, dual_con_y * Δ2, rtol = 1e-2)
     end
 
-    @testset "Signomial Optimization" begin
+end
 
-        model = SPModel(optimizer = SCS.Optimizer)
+@testset "Signomial Programming" begin
+
+    @testset "Simple Maximization Problem" begin
+
+        model = SPModel(optimizer = SCS.Optimizer, reltol = 1e-9, abstol = 1e-9)
         JuMP.set_silent(model)
 
         @variable(model, x ≥ 0.1)
@@ -200,7 +204,7 @@ using SCS
         @objective(model, Max, 2 * x)
 
         @constraint(model, x * y * z == 10)  # monomial equality constraint
-        @constraint(model, 2x + 3y - 4z ≤ 1.0)  # signomial inequality constraint
+        con_ineq = @constraint(model, 2x + 3y - 4z ≤ 1.0)  # signomial inequality constraint
 
         optimize!(model)
 
@@ -211,11 +215,46 @@ using SCS
         y_val = value(y)
         z_val = value(z)
 
+        dual_ineq = JuMP.dual(con_ineq)
+
         @test x_val > 0 && y_val > 0 && z_val > 0
         @test isapprox(x_val * y_val * z_val, 10.0, rtol = 1e-4)  # Equality constraint
         @test 2 * x_val + 3 * y_val - 4 * z_val ≈ 1.0 rtol = 1e-2  # Inequality constraint, but should be active here
 
         @test_nowarn show(IOBuffer(), solution_summary(model))
+
+        # also test sensitivity analysis
+        @testset "Sensitivity Analysis" begin
+
+            model_ϵ = SPModel(optimizer = SCS.Optimizer, reltol = 1e-9, abstol = 1e-9)
+            JuMP.set_silent(model_ϵ)
+
+            @variable(model_ϵ, x_ϵ ≥ 0.1)
+            @variable(model_ϵ, y_ϵ ≥ 0.1)
+            @variable(model_ϵ, z_ϵ ≥ 0.1)
+
+            @objective(model_ϵ, Max, 2 * x_ϵ)
+
+            δ = 1e-2
+
+            @constraint(model_ϵ, x_ϵ * y_ϵ * z_ϵ == 10)  # monomial equality constraint
+            @constraint(model_ϵ, 2x_ϵ + 3y_ϵ ≤ (1.0 + 4z_ϵ) * (1 + δ))  # signomial inequality constraint
+
+            optimize!(model_ϵ)
+
+            @test termination_status(model_ϵ) in
+                  [MOI.OPTIMAL, MOI.LOCALLY_SOLVED, MOI.ALMOST_OPTIMAL]
+
+            x_ϵ_val = value(x_ϵ)
+            y_ϵ_val = value(y_ϵ)
+            z_ϵ_val = value(z_ϵ)
+
+            Δobj_predict = -dual_ineq * δ # because of dual definition in JuMP.jl -- see https://jump.dev/MathOptInterface.jl/stable/background/duality/#Duality
+            Δobj_actual = value(objective_value(model_ϵ)) - value(objective_value(model))
+
+            @test isapprox(Δobj_actual, Δobj_predict, rtol = 1e-2)
+
+        end
 
     end
 

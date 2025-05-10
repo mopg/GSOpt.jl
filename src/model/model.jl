@@ -15,7 +15,13 @@ function ModelSolutionInfo()
 end
 
 function is_silent(model::AbstractSpGpModel)
-    return MOI.get(model.optimizer_factory, MOI.Silent())
+    is_silent = MOI.get(model.optimizer_factory, MOI.Silent())
+
+    if is_silent === nothing
+        return false
+    end
+
+    return is_silent
 end
 
 

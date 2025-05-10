@@ -18,33 +18,49 @@ The package takes care of the transformation to log-space and allows users to us
 using GSOpt
 ```
 
-## Quick Example
+## Small GP Example
 
 ```julia
 using GSOpt
 using SCS
 
-# Create a geometric programming model
 model = GPModel(SCS.Optimizer)
 
-# Define variables
 @variable(model, x ≥ 0.1)
 @variable(model, y ≥ 0.1)
 @variable(model, z ≥ 0.1)
 
-# Define objective (minimize a posynomial)
+# Minimize a posynomial
 @objective(model, Min, 1/(x * y * z) + x * y * z)
 
-# Add constraints
 @constraint(model, x * y * z == 1)     # monomial equality constraint
 @constraint(model, 2x + 3y + 4z ≤ 10)  # posynomial inequality constraint
 
-# Solve the problem
 optimize!(model)
 
-# Get the solution
-println("Optimal solution:")
-println(solution_summary(model))
+solution_summary(model)
+```
+
+## Small SP Example
+
+```julia
+using GSOpt
+using SCS
+
+model = SPModel(SCS.Optimizer)
+
+@variable(model, x ≥ 0.1)
+@variable(model, y ≥ 0.1)
+@variable(model, z ≥ 0.1)
+
+@objective(model, Min, 1/(x * y * z) + x * y * z)
+
+@constraint(model, x * y * z == 1)     # monomial equality constraint
+@constraint(model, 2x + 3y - 4z ≤ 10)  # signomial inequality constraint
+
+optimize!(model)
+
+solution_summary(model)
 ```
 
 ## Mathematical Background

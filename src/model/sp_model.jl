@@ -162,3 +162,15 @@ function JuMP.optimize!(model::SPModel)
     # Return the model
     return model
 end
+
+"""
+    Base.show(io::IO, model::SPModel)
+
+Pretty-prints the signomial programming model, showing key information.
+"""
+function Base.show(io::IO, model::SPModel)
+    print(io, "Signomial Programming Model")
+    print(io, "\n ├ Optimization sense: ", model.objective_sense)
+    print(io, "\n ├ Number of variables: ", JuMP.num_variables(model))
+    print(io, "\n └ Number of constraints: ", JuMP.num_constraints(model))
+end
