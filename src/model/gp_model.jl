@@ -155,5 +155,3 @@ function Base.show(io::IO, model::GPModel)
     print(io, "\n ├ Number of variables: ", JuMP.num_variables(model))
     print(io, "\n └ Number of constraints: ", JuMP.num_constraints(model))
 end
-
-

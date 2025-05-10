@@ -162,4 +162,3 @@ function JuMP.optimize!(model::SPModel)
     # Return the model
     return model
 end
-
