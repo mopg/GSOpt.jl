@@ -1,6 +1,7 @@
 # GSOpt.jl - Geometric & Signomial Optimization/Programming using JuMP
 
 [![Documentation](https://img.shields.io/badge/docs-%F0%9F%93%9A-blue)](https://mopg.github.io/GSOpt.jl/stable)
+[![Tests](https://github.com/mopg/GSOpt.jl/actions/workflows/test.yml/badge.svg)](https://github.com/mopg/GSOpt.jl/actions/workflows/test.yml)
 
 ## Overview
 
